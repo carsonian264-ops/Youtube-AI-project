@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Generated Prisma client
+backend/src/generated/
+backend/node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Generated media (never commit renders/assets). Matched at any depth
+# (not anchored to backend/storage/) so it still catches the directory
+# even if the app is ever run from a different working directory.
+**/storage/
+backend/tmp/
+**/local-storage/
+*.mp4
+*.mp3
+*.wav
+*.mov
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Misc
+*.tsbuildinfo
+.turbo/

@@ -1,0 +1,434 @@
+// AI Content Production Studio - Database Schema
+// See DATABASE.md for an explanation of every model and relationship.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+  DRAFT
+  PLANNING
+  SCRIPT_GENERATING
+  SCRIPT_READY
+  SCENES_GENERATING
+  SCENES_READY
+  ASSETS_GENERATING
+  AUDIO_GENERATING
+  RENDERING
+  QUALITY_CHECK
+  READY_FOR_REVIEW
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum AspectRatio {
+  LANDSCAPE_16_9
+  PORTRAIT_9_16
+  SQUARE_1_1
+}
+
+enum JobType {
+  CONTENT_GENERATION
+  VISUAL_GENERATION
+  VOICE_GENERATION
+  CAPTION_GENERATION
+  VIDEO_RENDERING
+  THUMBNAIL_GENERATION
+  PUBLISHING
+  QUALITY_CHECK
+}
+
+enum JobStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  FAILED
+  CANCELLED
+  DELAYED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+  AUDIO
+  MUSIC
+  SOUND_EFFECT
+  CAPTION
+  THUMBNAIL
+  FINAL_VIDEO
+}
+
+enum AssetStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum PublishVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum PublishingStatus {
+  PENDING
+  AWAITING_CONFIRMATION
+  UPLOADING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum UsageType {
+  CLAUDE_REQUEST
+  CLAUDE_TOKENS
+  IMAGE_GENERATION
+  VOICE_GENERATION
+  RENDER_SECONDS
+  STORAGE_BYTES
+  YOUTUBE_UPLOAD
+}
+
+enum CaptionFormat {
+  SRT
+  VTT
+}
+
+// ---------------------------------------------------------------------------
+// Core models
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects        Project[]
+  youtubeAccounts YoutubeAccount[]
+  usageRecords    UsageRecord[]
+
+  @@map("users")
+}
+
+model Project {
+  id                       String        @id @default(uuid())
+  userId                   String
+  title                    String
+  concept                  String
+  targetAudience           String?
+  tone                     String?
+  estimatedDurationSeconds Int?
+  aspectRatio              AspectRatio   @default(LANDSCAPE_16_9)
+  status                   ProjectStatus @default(DRAFT)
+  currentVersion           Int           @default(1)
+  failureReason            String?
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions       ProjectVersion[]
+  scripts        Script[]
+  scenes         Scene[]
+  characters     Character[]
+  assets         Asset[]
+  jobs           Job[]
+  videos         Video[]
+  thumbnails     Thumbnail[]
+  captions       Caption[]
+  publishingJobs PublishingJob[]
+  usageRecords   UsageRecord[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectVersion {
+  id            String   @id @default(uuid())
+  projectId     String
+  versionNumber Int
+  snapshot      Json
+  createdAt     DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+  @@index([projectId])
+  @@map("project_versions")
+}
+
+model Script {
+  id            String   @id @default(uuid())
+  projectId     String
+  versionNumber Int      @default(1)
+  content       Json
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("scripts")
+}
+
+model Scene {
+  id                String      @id @default(uuid())
+  projectId         String
+  sceneNumber       Int
+  title             String
+  narration         String
+  visualDescription String
+  visualPrompt      String
+  cameraDirection   String?
+  durationSeconds   Float       @default(0)
+  soundEffects      Json        @default("[]")
+  transition        String?
+  status            AssetStatus @default(PENDING)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assets   Asset[]
+  captions Caption[]
+
+  @@unique([projectId, sceneNumber])
+  @@index([projectId])
+  @@map("scenes")
+}
+
+model Character {
+  id               String   @id @default(uuid())
+  projectId        String
+  name             String
+  appearance       String
+  clothing         String?
+  personality      String?
+  ageCategory      String?
+  colors           Json     @default("[]")
+  visualStyle      String?
+  environment      String?
+  recurringObjects Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("characters")
+}
+
+model Asset {
+  id            String      @id @default(uuid())
+  projectId     String
+  sceneId       String?
+  type          AssetType
+  provider      String
+  storageKey    String
+  url           String?
+  mimeType      String?
+  fileSizeBytes Int?
+  status        AssetStatus @default(PENDING)
+  metadata      Json        @default("{}")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  project  Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene    Scene?         @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+  versions AssetVersion[]
+
+  @@index([projectId])
+  @@index([sceneId])
+  @@index([type])
+  @@map("assets")
+}
+
+model AssetVersion {
+  id            String   @id @default(uuid())
+  assetId       String
+  versionNumber Int
+  storageKey    String
+  url           String?
+  createdAt     DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, versionNumber])
+  @@map("asset_versions")
+}
+
+model Job {
+  id             String    @id @default(uuid())
+  projectId      String
+  type           JobType
+  status         JobStatus @default(PENDING)
+  progress       Int       @default(0)
+  queueJobId     String?
+  payload        Json      @default("{}")
+  result         Json?
+  errorMessage   String?
+  retryCount     Int       @default(0)
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  project  Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attempts JobAttempt[]
+
+  @@index([projectId])
+  @@index([type])
+  @@index([status])
+  @@map("jobs")
+}
+
+model JobAttempt {
+  id            String    @id @default(uuid())
+  jobId         String
+  attemptNumber Int
+  status        JobStatus
+  errorMessage  String?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_attempts")
+}
+
+model Video {
+  id              String      @id @default(uuid())
+  projectId       String
+  storageKey      String
+  url             String?
+  durationSeconds Float?
+  aspectRatio     AspectRatio @default(LANDSCAPE_16_9)
+  status          AssetStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("videos")
+}
+
+model Thumbnail {
+  id         String   @id @default(uuid())
+  projectId  String
+  storageKey String
+  url        String?
+  isSelected Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("thumbnails")
+}
+
+model Caption {
+  id         String        @id @default(uuid())
+  projectId  String
+  sceneId    String?
+  format     CaptionFormat @default(SRT)
+  storageKey String
+  url        String?
+  createdAt  DateTime      @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scene   Scene?  @relation(fields: [sceneId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@map("captions")
+}
+
+model YoutubeAccount {
+  id              String    @id @default(uuid())
+  userId          String
+  googleAccountId String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  scope           String?
+  expiresAt       DateTime?
+  channelId       String?
+  channelTitle    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publishingJobs PublishingJob[]
+
+  @@unique([userId, googleAccountId])
+  @@map("youtube_accounts")
+}
+
+model PublishingJob {
+  id               String            @id @default(uuid())
+  projectId        String
+  youtubeAccountId String
+  title            String
+  description      String
+  tags             Json              @default("[]")
+  visibility       PublishVisibility @default(PRIVATE)
+  status           PublishingStatus  @default(PENDING)
+  confirmedByUser  Boolean           @default(false)
+  youtubeVideoId   String?
+  errorMessage     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  youtubeAccount YoutubeAccount @relation(fields: [youtubeAccountId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("publishing_jobs")
+}
+
+model UsageRecord {
+  id        String    @id @default(uuid())
+  userId    String
+  projectId String?
+  jobId     String?
+  type      UsageType
+  quantity  Float
+  unit      String
+  metadata  Json      @default("{}")
+  createdAt DateTime  @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([type])
+  @@map("usage_records")
+}
+
+model SystemLog {
+  id        String   @id @default(uuid())
+  level     String
+  message   String
+  context   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([createdAt])
+  @@map("system_logs")
+}

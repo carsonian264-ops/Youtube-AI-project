@@ -1,0 +1,27 @@
+{
+  "name": "ai-content-production-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-powered end-to-end content production platform: idea -> script -> scenes -> visuals -> voice -> captions -> render -> publish.",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:worker": "npm run dev:worker --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "build:backend": "npm run build --workspace backend",
+    "build:frontend": "npm run build --workspace frontend",
+    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend",
+    "test": "npm run test --workspace backend",
+    "test:frontend": "npm run test --workspace frontend",
+    "prisma:generate": "npm run prisma:generate --workspace backend",
+    "prisma:migrate": "npm run prisma:migrate --workspace backend"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
