@@ -7,6 +7,7 @@ import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
 import { enqueueJob } from "../enqueue";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
@@ -108,8 +109,11 @@ export function startVideoRenderingWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Video rendering failed";
         logger.error({ err, projectId, jobId }, "Video rendering worker failed");
-        await jobService.markFailed(jobId, message, false);
-        await projectService.transitionStatus(projectId, "FAILED", message).catch(() => undefined);
+        const lastAttempt = isLastAttempt(bullJob);
+        await jobService.markFailed(jobId, message, !lastAttempt);
+        if (lastAttempt) {
+          await projectService.transitionStatus(projectId, "FAILED", message).catch(() => undefined);
+        }
         throw err;
       }
     },

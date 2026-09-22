@@ -3,6 +3,7 @@ import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
 import { enqueueJob } from "../enqueue";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { createVoiceGenerationProvider } from "@/services/providers";
@@ -65,7 +66,7 @@ export function startVoiceGenerationWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Voice generation failed";
         logger.error({ err, projectId, jobId, sceneId }, "Voice generation worker failed");
-        await jobService.markFailed(jobId, message, false);
+        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
         throw err;
       }
     },

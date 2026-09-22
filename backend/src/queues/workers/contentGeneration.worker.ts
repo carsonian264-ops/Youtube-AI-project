@@ -3,11 +3,37 @@ import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
 import { enqueueJob } from "../enqueue";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { projectService } from "@/services/project/ProjectService";
+import type { ProjectStatus } from "@/generated/prisma";
 import { createAIContentProvider } from "@/services/providers";
 import type { ProjectPlan } from "@/services/ai/schemas";
+import { InvalidStateTransitionError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
+
+/**
+ * Moves the project forward to a pipeline checkpoint status, but treats an
+ * illegal transition as a harmless no-op rather than a hard failure: on a
+ * BullMQ retry of this same job, the project may already be sitting past
+ * `to` (e.g. a previous attempt got all the way to ASSETS_GENERATING
+ * before a late transient failure), and this function reruns the whole
+ * pipeline stage from scratch regardless (it's idempotent -- scenes and
+ * characters are deleted and recreated). Refusing to proceed just because
+ * a status marker can no longer move forward would turn a recoverable
+ * retry into a permanent crash loop.
+ */
+async function advanceStatus(projectId: string, to: ProjectStatus): Promise<void> {
+  try {
+    await projectService.transitionStatus(projectId, to);
+  } catch (err) {
+    if (err instanceof InvalidStateTransitionError) {
+      logger.info({ projectId, to }, "Skipping checkpoint status transition; project already moved past it");
+      return;
+    }
+    throw err;
+  }
+}
 
 interface FullPlanPayload {
   jobId: string;
@@ -61,16 +87,16 @@ export function startContentGenerationWorker(): Worker {
     QUEUE_NAMES.CONTENT_GENERATION,
     async (bullJob: BullJob<Payload>) => {
       if (bullJob.data.sceneOnly) {
-        await processSceneOnly(bullJob.data);
+        await processSceneOnly(bullJob.data, bullJob);
       } else {
-        await processFullPlan(bullJob.data);
+        await processFullPlan(bullJob.data, bullJob);
       }
     },
     { connection: redisConnection, concurrency: 4 },
   );
 }
 
-async function processFullPlan(data: FullPlanPayload): Promise<void> {
+async function processFullPlan(data: FullPlanPayload, bullJob: BullJob<Payload>): Promise<void> {
   const { jobId, projectId, pipelineRunId, idea, targetDurationSeconds, tone } = data;
   await jobService.markActive(jobId);
 
@@ -78,7 +104,7 @@ async function processFullPlan(data: FullPlanPayload): Promise<void> {
   const ai = createAIContentProvider({ userId: project.userId, projectId, jobId });
 
   try {
-    await projectService.transitionStatus(projectId, "SCRIPT_GENERATING");
+    await advanceStatus(projectId, "SCRIPT_GENERATING");
     const plan = await ai.generateProjectPlan({ idea, targetDurationSeconds, tone });
     await jobService.updateProgress(jobId, 30);
 
@@ -103,7 +129,7 @@ async function processFullPlan(data: FullPlanPayload): Promise<void> {
       })),
     });
     await jobService.updateProgress(jobId, 60);
-    await projectService.transitionStatus(projectId, "SCRIPT_READY");
+    await advanceStatus(projectId, "SCRIPT_READY");
 
     const bible = await ai.generateCharacterBible(plan);
     await prisma.character.deleteMany({ where: { projectId } });
@@ -123,11 +149,10 @@ async function processFullPlan(data: FullPlanPayload): Promise<void> {
         })),
       });
     }
-    await projectService.transitionStatus(projectId, "SCENES_READY");
-    await jobService.markCompleted(jobId, { sceneCount: plan.scenes.length, characterCount: bible.characters.length });
+    await advanceStatus(projectId, "SCENES_READY");
 
     const scenes = await prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } });
-    await projectService.transitionStatus(projectId, "ASSETS_GENERATING");
+    await advanceStatus(projectId, "ASSETS_GENERATING");
     for (const scene of scenes) {
       await enqueueJob({
         projectId,
@@ -136,16 +161,25 @@ async function processFullPlan(data: FullPlanPayload): Promise<void> {
         idempotencyKey: `visual-generation:${pipelineRunId}:${scene.id}`,
       });
     }
+
+    // Marked completed only once every downstream job has actually been
+    // handed off -- doing this earlier (before the enqueue loop) meant a
+    // late failure in that loop would try to mark an already-COMPLETED
+    // job record back to FAILED, leaving contradictory job/attempt rows.
+    await jobService.markCompleted(jobId, { sceneCount: plan.scenes.length, characterCount: bible.characters.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Content generation failed";
     logger.error({ err, projectId, jobId }, "Content generation worker failed");
-    await jobService.markFailed(jobId, message, false);
-    await projectService.transitionStatus(projectId, "FAILED", message).catch(() => undefined);
+    const lastAttempt = isLastAttempt(bullJob);
+    await jobService.markFailed(jobId, message, !lastAttempt);
+    if (lastAttempt) {
+      await projectService.transitionStatus(projectId, "FAILED", message).catch(() => undefined);
+    }
     throw err;
   }
 }
 
-async function processSceneOnly(data: SceneOnlyPayload): Promise<void> {
+async function processSceneOnly(data: SceneOnlyPayload, bullJob: BullJob<Payload>): Promise<void> {
   const { jobId, projectId, sceneId, instructions } = data;
   await jobService.markActive(jobId);
 
@@ -188,7 +222,7 @@ async function processSceneOnly(data: SceneOnlyPayload): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Scene regeneration failed";
     logger.error({ err, projectId, jobId, sceneId }, "Scene-only content generation failed");
-    await jobService.markFailed(jobId, message, false);
+    await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
     throw err;
   }
 }

@@ -3,6 +3,7 @@ import { Worker, type Job as BullJob } from "bullmq";
 import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { createStorageProvider, createVisualGenerationProvider } from "@/services/providers";
 import { usageService } from "@/services/usage/UsageService";
@@ -52,7 +53,7 @@ export function startThumbnailGenerationWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Thumbnail generation failed";
         logger.error({ err, projectId, jobId }, "Thumbnail generation worker failed");
-        await jobService.markFailed(jobId, message, false);
+        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
         throw err;
       }
     },

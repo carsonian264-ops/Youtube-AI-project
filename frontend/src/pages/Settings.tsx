@@ -1,17 +1,45 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, getErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/lib/authStore";
 import { useToast } from "@/components/Toast";
 import { LoadingState } from "@/components/States";
 import type { YoutubeAccount } from "@/types";
 
+const YOUTUBE_OAUTH_RESULT_MESSAGES: Record<string, { message: string; variant: "success" | "error" }> = {
+  connected: { message: "YouTube channel connected.", variant: "success" },
+  denied: { message: "YouTube connection cancelled -- consent was not granted.", variant: "error" },
+  error: { message: "Couldn't connect a YouTube channel. Please try again.", variant: "error" },
+};
+
 export default function Settings() {
   const user = useAuthStore((s) => s.user);
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: accounts, isLoading } = useQuery({
     queryKey: ["youtube-accounts"],
     queryFn: async () => (await api.get<YoutubeAccount[]>("/youtube/accounts")).data,
   });
+
+  useEffect(() => {
+    const result = searchParams.get("youtube");
+    if (!result) return;
+    const outcome = YOUTUBE_OAUTH_RESULT_MESSAGES[result];
+    if (outcome) {
+      showToast(outcome.message, outcome.variant);
+      if (outcome.variant === "success") {
+        queryClient.invalidateQueries({ queryKey: ["youtube-accounts"] });
+      }
+    }
+    // Strip the query param so a page refresh doesn't re-show the toast.
+    setSearchParams((params) => {
+      params.delete("youtube");
+      return params;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function connectYoutube() {
     try {

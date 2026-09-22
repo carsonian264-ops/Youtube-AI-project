@@ -2,8 +2,10 @@ import { Worker, type Job as BullJob } from "bullmq";
 import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { projectService } from "@/services/project/ProjectService";
+import { ProjectStateMachine } from "@/services/project/ProjectStateMachine";
 import { createAIContentProvider } from "@/services/providers";
 import type { ProjectPlan } from "@/services/ai/schemas";
 import { logger } from "@/utils/logger";
@@ -50,16 +52,44 @@ export function startQualityCheckWorker(): Worker {
           },
         });
 
+        // The AI call already succeeded at this point -- mark the job
+        // completed unconditionally. Whether we can *also* land the
+        // project on READY_FOR_REVIEW depends on its status right now,
+        // which can have moved on since this job was enqueued (e.g. the
+        // user started a re-render in the meantime); that's a separate
+        // concern and must never retroactively turn a successful AI
+        // call into a "failed" job.
         await jobService.markCompleted(jobId, result);
-        await projectService.transitionStatus(projectId, "READY_FOR_REVIEW");
+        const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+        if (ProjectStateMachine.canTransition(current.status, "READY_FOR_REVIEW")) {
+          await projectService.transitionStatus(projectId, "READY_FOR_REVIEW");
+        } else {
+          logger.info(
+            { projectId, jobId, status: current.status },
+            "Quality check completed but project has since moved to a status that can't transition to READY_FOR_REVIEW; leaving status as-is",
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Quality check failed";
         logger.error({ err, projectId, jobId }, "Quality check worker failed");
-        await jobService.markFailed(jobId, message, false);
+        const lastAttempt = isLastAttempt(bullJob);
+        await jobService.markFailed(jobId, message, !lastAttempt);
         // Quality check failing should not strand the project -- the
         // user can still review what was generated and decide what to
-        // regenerate, per "the user must remain in control."
-        await projectService.transitionStatus(projectId, "READY_FOR_REVIEW").catch(() => undefined);
+        // regenerate, per "the user must remain in control." Only do
+        // this if the project is actually still sitting in QUALITY_CHECK
+        // (the automatic pipeline's own state) -- a manually-triggered
+        // re-check failing shouldn't yank the project back to review from
+        // wherever else it might legitimately be by now. And only revert
+        // once this is genuinely the last attempt -- otherwise BullMQ is
+        // about to retry automatically, and reverting now would just
+        // cause the eventual (likely successful) retry's own success
+        // path to redundantly self-transition, while briefly showing the
+        // user a misleading "reverted" state for a failure that never
+        // actually stuck.
+        if (lastAttempt) {
+          await projectService.transitionStatusIfCurrent(projectId, ["QUALITY_CHECK"], "READY_FOR_REVIEW").catch(() => undefined);
+        }
       }
     },
     { connection: redisConnection, concurrency: 4 },

@@ -1,6 +1,6 @@
 import { prisma } from "@/db/prisma";
 import type { AspectRatio, Project, ProjectStatus } from "@/generated/prisma";
-import { AuthorizationError, NotFoundError } from "@/utils/errors";
+import { AuthorizationError, ConflictError, NotFoundError } from "@/utils/errors";
 import { ProjectStateMachine } from "./ProjectStateMachine";
 
 export interface CreateProjectInput {
@@ -64,7 +64,16 @@ export class ProjectService {
   }
 
   async delete(userId: string, projectId: string): Promise<void> {
-    await this.getOwned(userId, projectId);
+    const project = await this.getOwned(userId, projectId);
+    if (project.status === "PUBLISHING") {
+      // Every related row (Job, PublishingJob, ...) cascade-deletes with
+      // the project, but the real YouTube upload a worker is mid-flight
+      // on has no way to know that -- it would keep running against
+      // rows that no longer exist, and the video would end up
+      // successfully published with the app having no record of it.
+      // Same reasoning as cancel() refusing to touch a live publish.
+      throw new ConflictError("Cannot delete a project while it is actively publishing to YouTube; wait for it to finish");
+    }
     await prisma.project.delete({ where: { id: projectId } });
   }
 

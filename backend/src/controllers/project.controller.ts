@@ -121,6 +121,18 @@ export async function renderProject(req: Request, res: Response): Promise<void> 
 
 export async function runQualityCheck(req: Request, res: Response): Promise<void> {
   const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
+  // The automatic pipeline enqueues this itself after rendering (project
+  // status is already QUALITY_CHECK by the time that job runs). A
+  // user-triggered re-check only makes sense once the project has
+  // actually reached review -- earlier than that, scenes/assets aren't
+  // final yet, and the worker's own success path expects to land back
+  // on READY_FOR_REVIEW, which isn't a legal transition from any earlier
+  // state (see ProjectStateMachine).
+  if (project.status !== "READY_FOR_REVIEW" && project.status !== "QUALITY_CHECK") {
+    throw new ConflictError(
+      `Quality check can only be run once a project reaches READY_FOR_REVIEW (currently ${project.status})`,
+    );
+  }
   const job = await enqueueJob({ projectId: project.id, type: "QUALITY_CHECK", payload: {} });
   res.status(202).json({ jobId: job.id });
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
 import { enqueueJob } from "../enqueue";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { projectService } from "@/services/project/ProjectService";
 import { createStorageProvider } from "@/services/providers";
@@ -56,7 +57,7 @@ export function startCaptionGenerationWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Caption generation failed";
         logger.error({ err, projectId, jobId }, "Caption generation worker failed");
-        await jobService.markFailed(jobId, message, false);
+        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
         throw err;
       }
     },

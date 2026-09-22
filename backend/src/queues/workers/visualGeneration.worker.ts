@@ -3,6 +3,7 @@ import { prisma } from "@/db/prisma";
 import { QUEUE_NAMES } from "../queues";
 import { redisConnection } from "../connection";
 import { enqueueJob } from "../enqueue";
+import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
@@ -85,7 +86,7 @@ export function startVisualGenerationWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Visual generation failed";
         logger.error({ err, projectId, jobId, sceneId }, "Visual generation worker failed");
-        await jobService.markFailed(jobId, message, false);
+        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
         throw err;
       }
     },

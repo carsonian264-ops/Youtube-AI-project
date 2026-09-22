@@ -36,8 +36,22 @@ export async function startOAuth(req: Request, res: Response): Promise<void> {
 
 /** Step 2: Google redirects back here with a one-time code; we exchange it for tokens and store them encrypted. */
 export async function oauthCallback(req: Request, res: Response): Promise<void> {
+  // Google redirects here with `?error=access_denied&state=...` (no
+  // `code`) when the user cancels the consent screen -- a common,
+  // expected outcome, not a server error. Handling it before touching
+  // the OAuth client avoids passing `code=undefined` into
+  // client.getToken() and crashing into a generic 500.
+  if (req.query.error) {
+    res.redirect(`${env.FRONTEND_URL}/settings?youtube=denied`);
+    return;
+  }
+
   const client = oauthClient();
-  const code = req.query.code as string;
+  const code = req.query.code;
+  if (typeof code !== "string" || !code) {
+    res.redirect(`${env.FRONTEND_URL}/settings?youtube=error`);
+    return;
+  }
   const userId = verifyOAuthState(req.query.state);
 
   const { tokens } = await client.getToken(code);

@@ -88,7 +88,7 @@ export default function ProjectWorkspace() {
               Re-render video
             </button>
           )}
-          {activeScript && (
+          {project.status === "READY_FOR_REVIEW" && (
             <button className="btn-secondary" onClick={() => runAction(() => runQualityCheck.mutateAsync(), "Quality check started")}>
               Run quality check
             </button>

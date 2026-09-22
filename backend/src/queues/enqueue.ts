@@ -63,12 +63,25 @@ export async function cancelPendingJobsForProject(projectId: string): Promise<vo
         if (state === "waiting" || state === "delayed" || state === "prioritized") {
           await bullJob.remove();
         } else {
-          // Already active (or otherwise past "not yet started") by the
-          // time we got here -- leave it to finish or fail on its own.
+          // Already active, or already finished and cleaned out of
+          // Redis by the time we got here (BullMQ can remove a
+          // completed/failed job before we ever see it, especially for
+          // a near-instant mock-provider job) -- leave its Postgres
+          // status exactly as whatever the worker itself last wrote.
           continue;
         }
       }
-      await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED", completedAt: new Date() } });
+      // Guarded on status still being PENDING: between the findMany()
+      // above and here, the worker may have already picked this job up
+      // and moved it to ACTIVE/COMPLETED/FAILED. An unconditional
+      // update would clobber that -- e.g. overwrite a job that actually
+      // *succeeded* back to CANCELLED, which would then make
+      // countByTypeAndStatus() under-count completed jobs and stall the
+      // "are all siblings done" cascade checks elsewhere.
+      await prisma.job.updateMany({
+        where: { id: job.id, status: "PENDING" },
+        data: { status: "CANCELLED", completedAt: new Date() },
+      });
     } catch (err) {
       logger.warn({ err, jobId: job.id, projectId }, "Failed to cancel a pending job; leaving it as-is");
     }
