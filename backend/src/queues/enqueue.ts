@@ -1,5 +1,7 @@
+import { prisma } from "@/db/prisma";
 import type { JobType } from "@/generated/prisma";
 import { jobService } from "@/services/job/JobService";
+import { logger } from "@/utils/logger";
 import { JOB_TYPE_TO_QUEUE_NAME, queues } from "./queues";
 
 export interface EnqueueInput {
@@ -36,4 +38,39 @@ export async function enqueueJob(input: EnqueueInput) {
   }
 
   return job;
+}
+
+/**
+ * Best-effort cancellation for a project: removes every not-yet-started
+ * (still queued, not currently being processed) BullMQ job belonging to
+ * it and marks their Postgres rows CANCELLED. A job that's already
+ * ACTIVE is left running -- there's no safe way to interrupt an
+ * in-flight FFmpeg render or an in-flight Claude/YouTube call mid-call,
+ * so "cancellation where practical" (spec section 12) means the queue
+ * backlog, not forcibly killing live work.
+ */
+export async function cancelPendingJobsForProject(projectId: string): Promise<void> {
+  const pendingJobs = await prisma.job.findMany({
+    where: { projectId, status: "PENDING" },
+  });
+
+  for (const job of pendingJobs) {
+    try {
+      const queueName = JOB_TYPE_TO_QUEUE_NAME[job.type];
+      const bullJob = await queues[queueName].getJob(job.queueJobId ?? job.id);
+      if (bullJob) {
+        const state = await bullJob.getState();
+        if (state === "waiting" || state === "delayed" || state === "prioritized") {
+          await bullJob.remove();
+        } else {
+          // Already active (or otherwise past "not yet started") by the
+          // time we got here -- leave it to finish or fail on its own.
+          continue;
+        }
+      }
+      await prisma.job.update({ where: { id: job.id }, data: { status: "CANCELLED", completedAt: new Date() } });
+    } catch (err) {
+      logger.warn({ err, jobId: job.id, projectId }, "Failed to cancel a pending job; leaving it as-is");
+    }
+  }
 }

@@ -51,7 +51,16 @@ export function startVoiceGenerationWorker(): Worker {
 
         const counts = await jobService.countByTypeAndStatus(projectId, "VOICE_GENERATION", pipelineRunId);
         if (counts.total > 0 && counts.completed + counts.failed === counts.total) {
-          await enqueueJob({ projectId, type: "CAPTION_GENERATION", payload: { pipelineRunId } });
+          // Same race as visual-generation's fan-in above: multiple
+          // scenes' voice jobs can finish within the same instant and
+          // all reach this branch. The idempotencyKey ensures only one
+          // CAPTION_GENERATION job for this pipeline run is ever created.
+          await enqueueJob({
+            projectId,
+            type: "CAPTION_GENERATION",
+            payload: { pipelineRunId },
+            idempotencyKey: `caption-generation:${pipelineRunId}`,
+          });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Voice generation failed";

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Request, Response } from "express";
 import { prisma } from "@/db/prisma";
 import { projectService } from "@/services/project/ProjectService";
-import { enqueueJob } from "@/queues/enqueue";
+import { cancelPendingJobsForProject, enqueueJob } from "@/queues/enqueue";
 import { jobService } from "@/services/job/JobService";
 import { ConflictError } from "@/utils/errors";
 
@@ -35,11 +35,13 @@ export async function deleteProject(req: Request, res: Response): Promise<void> 
 export async function generateProject(req: Request, res: Response): Promise<void> {
   const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
 
-  if (project.status !== "DRAFT" && project.status !== "FAILED") {
-    throw new ConflictError(`Project is already ${project.status}; cancel or wait for it to finish before regenerating everything`);
+  // Compare-and-swap, not read-then-write: two requests racing here
+  // (a double-click, or a retried request) must not both pass a plain
+  // status check and each enqueue their own CONTENT_GENERATION job.
+  const claimed = await projectService.transitionStatusIfCurrent(project.id, ["DRAFT", "FAILED"], "PLANNING");
+  if (!claimed) {
+    throw new ConflictError("Project is already generating or has already been generated; cancel or wait for it to finish before regenerating everything");
   }
-
-  await projectService.transitionStatus(project.id, "PLANNING");
 
   const pipelineRunId = randomUUID();
   const job = await enqueueJob({
@@ -77,7 +79,10 @@ export async function getProjectStatus(req: Request, res: Response): Promise<voi
 
 export async function regenerateScript(req: Request, res: Response): Promise<void> {
   const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
-  await projectService.transitionStatus(project.id, "SCRIPT_GENERATING");
+  const claimed = await projectService.transitionStatusIfCurrent(project.id, ["SCRIPT_READY"], "SCRIPT_GENERATING");
+  if (!claimed) {
+    throw new ConflictError("Project must be in SCRIPT_READY to regenerate the script (it may already be regenerating)");
+  }
 
   const pipelineRunId = randomUUID();
   const job = await enqueueJob({
@@ -101,7 +106,14 @@ export async function renderProject(req: Request, res: Response): Promise<void> 
     throw new ConflictError("Project has no scenes to render yet");
   }
 
-  await projectService.transitionStatus(project.id, "RENDERING");
+  const claimed = await projectService.transitionStatusIfCurrent(
+    project.id,
+    ["AUDIO_GENERATING", "QUALITY_CHECK", "READY_FOR_REVIEW"],
+    "RENDERING",
+  );
+  if (!claimed) {
+    throw new ConflictError("Project is not in a state that can be rendered right now (it may already be rendering)");
+  }
   const pipelineRunId = randomUUID();
   const job = await enqueueJob({ projectId: project.id, type: "VIDEO_RENDERING", payload: { pipelineRunId } });
   res.status(202).json({ jobId: job.id, pipelineRunId });
@@ -111,4 +123,19 @@ export async function runQualityCheck(req: Request, res: Response): Promise<void
   const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
   const job = await enqueueJob({ projectId: project.id, type: "QUALITY_CHECK", payload: {} });
   res.status(202).json({ jobId: job.id });
+}
+
+/**
+ * Cancels a project: transitions it to CANCELLED (rejected with 409 if
+ * it's already in a terminal state or -- deliberately -- actively
+ * PUBLISHING, since there's no safe way to retroactively "cancel" a
+ * YouTube upload that's already in flight) and removes every
+ * not-yet-started queued job so it doesn't keep churning in the
+ * background.
+ */
+export async function cancelProject(req: Request, res: Response): Promise<void> {
+  const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
+  const updated = await projectService.transitionStatus(project.id, "CANCELLED");
+  await cancelPendingJobsForProject(project.id);
+  res.status(200).json(updated);
 }

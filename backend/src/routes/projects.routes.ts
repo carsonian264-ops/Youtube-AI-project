@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  cancelProject,
   createProject,
   deleteProject,
   generateProject,
@@ -18,6 +19,7 @@ import {
   CreateProjectSchema,
   GenerateProjectSchema,
   IdParamSchema,
+  RegenerateScriptSchema,
   RenderProjectSchema,
   UpdateProjectSchema,
   YoutubePublishSchema,
@@ -41,7 +43,13 @@ projectsRouter.post(
   asyncHandler(generateProject),
 );
 projectsRouter.get("/:id/status", validate(IdParamSchema, "params"), asyncHandler(getProjectStatus));
-projectsRouter.post("/:id/script/regenerate", validate(IdParamSchema, "params"), asyncHandler(regenerateScript));
+projectsRouter.post("/:id/cancel", validate(IdParamSchema, "params"), asyncHandler(cancelProject));
+projectsRouter.post(
+  "/:id/script/regenerate",
+  validate(IdParamSchema, "params"),
+  validate(RegenerateScriptSchema),
+  asyncHandler(regenerateScript),
+);
 projectsRouter.post(
   "/:id/render",
   validate(IdParamSchema, "params"),

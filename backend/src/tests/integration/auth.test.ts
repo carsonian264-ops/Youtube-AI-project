@@ -40,6 +40,17 @@ describe("Auth API", () => {
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("CONFLICT");
     });
+
+    it("treats email as case-insensitive, rejecting a duplicate that only differs by case", async () => {
+      await request(app).post("/api/auth/register").send({ email: "CaseTest@Example.com", password: "supersecret123" });
+      const res = await request(app).post("/api/auth/register").send({ email: "casetest@example.com", password: "supersecret123" });
+      expect(res.status).toBe(409);
+    });
+
+    it("normalizes the stored email to lowercase", async () => {
+      const res = await request(app).post("/api/auth/register").send({ email: "Mixed@Case.com", password: "supersecret123" });
+      expect(res.body.user.email).toBe("mixed@case.com");
+    });
   });
 
   describe("POST /api/auth/login", () => {
@@ -58,6 +69,12 @@ describe("Auth API", () => {
       expect(wrongPassword.status).toBe(401);
       expect(unknownEmail.status).toBe(401);
       expect(wrongPassword.body.error.message).toBe(unknownEmail.body.error.message);
+    });
+
+    it("logs in successfully with different casing than was used to register", async () => {
+      await request(app).post("/api/auth/register").send({ email: "FrankLogin@Example.com", password: "supersecret123" });
+      const res = await request(app).post("/api/auth/login").send({ email: "franklogin@example.com", password: "supersecret123" });
+      expect(res.status).toBe(200);
     });
   });
 

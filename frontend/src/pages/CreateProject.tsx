@@ -26,12 +26,18 @@ export default function CreateProject() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (!Number.isFinite(durationMinutes) || durationMinutes < 1) {
+      setError("Enter a target length of at least 1 minute.");
+      return;
+    }
+
     try {
       const project = await createProject.mutateAsync({
         title: title.trim() || idea.slice(0, 80),
         concept: idea,
         tone,
-        estimatedDurationSeconds: durationMinutes * 60,
+        estimatedDurationSeconds: Math.round(durationMinutes * 60),
         aspectRatio,
       });
       showToast("Project created", "success");

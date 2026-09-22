@@ -13,6 +13,7 @@ const STYLES: Record<string, string> = {
   RENDERING: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   QUALITY_CHECK: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   READY_FOR_REVIEW: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  PUBLISHING: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   PUBLISHED: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
   FAILED: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
   CANCELLED: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",

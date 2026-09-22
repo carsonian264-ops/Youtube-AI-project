@@ -27,8 +27,21 @@ const defaultJobOptions = {
   removeOnFail: { age: 60 * 60 * 24 * 30 },
 };
 
+// Publishing uploads a video to a real YouTube channel -- a genuinely
+// non-idempotent, high-consequence external side effect. If it fails
+// *after* the upload succeeds (e.g. a DB write immediately afterward
+// hiccups), an automatic retry would silently upload the same video to
+// the user's channel a second time. Every other queue's work is either
+// idempotent (re-running content-generation just overwrites the same
+// script) or cheap/safe to redo (re-rendering a video), so only this
+// queue overrides attempts down to 1: a failure surfaces to the user as
+// a failed PublishingJob they can explicitly retry, instead of a silent
+// automatic re-upload.
+const PUBLISHING_JOB_OPTIONS = { ...defaultJobOptions, attempts: 1 };
+
 function makeQueue(name: QueueName): Queue {
-  return new Queue(name, { connection: redisConnection, defaultJobOptions });
+  const jobOptions = name === QUEUE_NAMES.PUBLISHING ? PUBLISHING_JOB_OPTIONS : defaultJobOptions;
+  return new Queue(name, { connection: redisConnection, defaultJobOptions: jobOptions });
 }
 
 export const queues: Record<QueueName, Queue> = {

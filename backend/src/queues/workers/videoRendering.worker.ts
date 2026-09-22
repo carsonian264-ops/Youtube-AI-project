@@ -99,7 +99,12 @@ export function startVideoRenderingWorker(): Worker {
         await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
 
         await projectService.transitionStatus(projectId, "QUALITY_CHECK");
-        await enqueueJob({ projectId, type: "QUALITY_CHECK", payload: { pipelineRunId: bullJob.data.pipelineRunId } });
+        await enqueueJob({
+          projectId,
+          type: "QUALITY_CHECK",
+          payload: { pipelineRunId: bullJob.data.pipelineRunId },
+          idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Video rendering failed";
         logger.error({ err, projectId, jobId }, "Video rendering worker failed");

@@ -30,6 +30,7 @@ const NON_TERMINAL_STATES: ProjectStatus[] = [
   "RENDERING",
   "QUALITY_CHECK",
   "READY_FOR_REVIEW",
+  "PUBLISHING",
   "FAILED",
 ];
 
@@ -49,7 +50,15 @@ const BASE_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   AUDIO_GENERATING: ["RENDERING", "AUDIO_GENERATING", "CANCELLED"],
   RENDERING: ["QUALITY_CHECK", "CANCELLED"],
   QUALITY_CHECK: ["READY_FOR_REVIEW", "RENDERING", "CANCELLED"],
-  READY_FOR_REVIEW: ["PUBLISHED", "ASSETS_GENERATING", "RENDERING", "CANCELLED"],
+  // PUBLISHING is a narrow claim state: publishToYoutube() atomically
+  // moves the project here (compare-and-swap on the current status) so
+  // that two racing/duplicate publish requests can't both pass a plain
+  // "is it READY_FOR_REVIEW" check and each kick off their own upload --
+  // only one can win the swap. The publishing worker moves it on to
+  // PUBLISHED on success, or back to READY_FOR_REVIEW on failure so the
+  // user can retry.
+  READY_FOR_REVIEW: ["PUBLISHING", "ASSETS_GENERATING", "RENDERING", "CANCELLED"],
+  PUBLISHING: ["PUBLISHED", "READY_FOR_REVIEW"],
   PUBLISHED: [],
   FAILED: ["PLANNING", "CANCELLED"],
   CANCELLED: [],

@@ -1,6 +1,9 @@
 import { prisma } from "@/db/prisma";
+import { Prisma as PrismaNS } from "@/generated/prisma";
 import type { Job, JobStatus, JobType, Prisma } from "@/generated/prisma";
 import { NotFoundError } from "@/utils/errors";
+
+const UNIQUE_CONSTRAINT_VIOLATION = "P2002";
 
 export interface CreateJobInput {
   projectId: string;
@@ -24,15 +27,39 @@ export class JobService {
       const existing = await prisma.job.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
       if (existing) return existing;
     }
-    return prisma.job.create({
-      data: {
-        projectId: input.projectId,
-        type: input.type,
-        payload: (input.payload ?? {}) as Prisma.InputJsonValue,
-        idempotencyKey: input.idempotencyKey,
-        status: "PENDING",
-      },
-    });
+
+    try {
+      return await prisma.job.create({
+        data: {
+          projectId: input.projectId,
+          type: input.type,
+          payload: (input.payload ?? {}) as Prisma.InputJsonValue,
+          idempotencyKey: input.idempotencyKey,
+          status: "PENDING",
+        },
+      });
+    } catch (err) {
+      // The findUnique above is a check-then-act race: when multiple
+      // workers finish sibling jobs at nearly the same moment (see
+      // visualGeneration.worker.ts / voiceGeneration.worker.ts), they can
+      // all observe "no existing job for this key" and all reach this
+      // create() call before any of them commits. Only one insert wins;
+      // the rest hit the unique constraint on idempotencyKey. Falling
+      // back to the now-committed row (instead of letting this throw)
+      // is what makes idempotencyKey an actual concurrency guard rather
+      // than just a best-effort check -- without it, the loser's error
+      // would propagate up and fail the *already-succeeded* sibling job
+      // that was merely trying to enqueue the next stage.
+      if (
+        input.idempotencyKey &&
+        err instanceof PrismaNS.PrismaClientKnownRequestError &&
+        err.code === UNIQUE_CONSTRAINT_VIOLATION
+      ) {
+        const existing = await prisma.job.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+        if (existing) return existing;
+      }
+      throw err;
+    }
   }
 
   async get(jobId: string): Promise<Job> {

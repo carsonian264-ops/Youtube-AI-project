@@ -15,10 +15,17 @@ import { logger } from "@/utils/logger";
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   if (isAppError(err)) {
     if (err.statusCode >= 500) {
+      // 5xx AppErrors are almost always ProviderError, whose `details`
+      // can carry a raw upstream response body (OpenArt/YouTube/etc, or
+      // whatever their error page happened to say) -- useful for
+      // debugging, not something to forward verbatim to an API
+      // consumer. Full detail goes to the log; the client gets the
+      // message only ("safe error messages", spec section 18).
       logger.error({ err, path: req.path }, err.message);
-    } else {
-      logger.warn({ code: err.code, path: req.path }, err.message);
+      res.status(err.statusCode).json({ error: { code: err.code, message: err.message } });
+      return;
     }
+    logger.warn({ code: err.code, path: req.path }, err.message);
     res.status(err.statusCode).json({
       error: { code: err.code, message: err.message, details: err.details },
     });

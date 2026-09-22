@@ -38,8 +38,21 @@ export function startCaptionGenerationWorker(): Worker {
         await jobService.markCompleted(jobId, { captionKey: uploaded.key });
 
         await projectService.transitionStatus(projectId, "RENDERING");
-        await enqueueJob({ projectId, type: "VIDEO_RENDERING", payload: { pipelineRunId } });
-        await enqueueJob({ projectId, type: "THUMBNAIL_GENERATION", payload: { pipelineRunId } });
+        // Deterministic keys guard against a BullMQ retry of *this* job
+        // (e.g. a transient failure right after markCompleted) re-firing
+        // duplicate render/thumbnail jobs on the retry attempt.
+        await enqueueJob({
+          projectId,
+          type: "VIDEO_RENDERING",
+          payload: { pipelineRunId },
+          idempotencyKey: `video-rendering:${pipelineRunId}`,
+        });
+        await enqueueJob({
+          projectId,
+          type: "THUMBNAIL_GENERATION",
+          payload: { pipelineRunId },
+          idempotencyKey: `thumbnail-generation:${pipelineRunId}`,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Caption generation failed";
         logger.error({ err, projectId, jobId }, "Caption generation worker failed");

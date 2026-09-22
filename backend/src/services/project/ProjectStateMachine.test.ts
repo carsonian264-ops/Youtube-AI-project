@@ -12,6 +12,7 @@ describe("ProjectStateMachine", () => {
       "RENDERING",
       "QUALITY_CHECK",
       "READY_FOR_REVIEW",
+      "PUBLISHING",
       "PUBLISHED",
     ];
     let current: Parameters<typeof ProjectStateMachine.assertTransition>[0] = "DRAFT";
@@ -44,6 +45,7 @@ describe("ProjectStateMachine", () => {
       "RENDERING",
       "QUALITY_CHECK",
       "READY_FOR_REVIEW",
+      "PUBLISHING",
     ];
     for (const state of nonTerminal) {
       expect(ProjectStateMachine.canTransition(state, "FAILED")).toBe(true);
@@ -56,5 +58,26 @@ describe("ProjectStateMachine", () => {
 
   it("treats a same-state transition as a no-op success", () => {
     expect(ProjectStateMachine.canTransition("RENDERING", "RENDERING")).toBe(true);
+  });
+
+  describe("PUBLISHING", () => {
+    it("is reachable only from READY_FOR_REVIEW", () => {
+      expect(ProjectStateMachine.canTransition("READY_FOR_REVIEW", "PUBLISHING")).toBe(true);
+      expect(ProjectStateMachine.canTransition("QUALITY_CHECK", "PUBLISHING")).toBe(false);
+      expect(ProjectStateMachine.canTransition("RENDERING", "PUBLISHING")).toBe(false);
+    });
+
+    it("can revert to READY_FOR_REVIEW when a publish attempt fails", () => {
+      expect(() => ProjectStateMachine.assertTransition("PUBLISHING", "READY_FOR_REVIEW")).not.toThrow();
+    });
+
+    it("deliberately cannot be cancelled mid-upload", () => {
+      // A CANCELLED project is terminal, but PUBLISHING has already
+      // committed to an external, non-retractable side effect (a
+      // YouTube upload in flight) -- allowing a cancel here would let
+      // the project end up CANCELLED while the upload still completes
+      // in the background with nowhere valid to report success to.
+      expect(ProjectStateMachine.canTransition("PUBLISHING", "CANCELLED")).toBe(false);
+    });
   });
 });

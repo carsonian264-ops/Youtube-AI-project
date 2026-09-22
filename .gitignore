@@ -27,10 +27,13 @@ npm-debug.log*
 # Testing
 coverage/
 
-# Generated media (never commit renders/assets). Matched at any depth
-# (not anchored to backend/storage/) so it still catches the directory
-# even if the app is ever run from a different working directory.
-**/storage/
+# Generated media (never commit renders/assets). Anchored to the real
+# local storage root (STORAGE_LOCAL_ROOT resolves to backend/storage/ by
+# default) -- NOT "**/storage/", which also matches the *source*
+# directory backend/src/services/storage/ (StorageProvider.ts,
+# LocalStorageProvider.ts, S3StorageProvider.ts) and silently excluded
+# it from every commit until this was caught.
+backend/storage/
 backend/tmp/
 **/local-storage/
 *.mp4

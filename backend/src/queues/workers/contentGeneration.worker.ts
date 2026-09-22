@@ -129,7 +129,12 @@ async function processFullPlan(data: FullPlanPayload): Promise<void> {
     const scenes = await prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } });
     await projectService.transitionStatus(projectId, "ASSETS_GENERATING");
     for (const scene of scenes) {
-      await enqueueJob({ projectId, type: "VISUAL_GENERATION", payload: { pipelineRunId, sceneId: scene.id } });
+      await enqueueJob({
+        projectId,
+        type: "VISUAL_GENERATION",
+        payload: { pipelineRunId, sceneId: scene.id },
+        idempotencyKey: `visual-generation:${pipelineRunId}:${scene.id}`,
+      });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Content generation failed";

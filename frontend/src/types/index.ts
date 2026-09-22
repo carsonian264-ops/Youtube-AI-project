@@ -10,9 +10,27 @@ export type ProjectStatus =
   | "RENDERING"
   | "QUALITY_CHECK"
   | "READY_FOR_REVIEW"
+  | "PUBLISHING"
   | "PUBLISHED"
   | "FAILED"
   | "CANCELLED";
+
+/**
+ * Statuses where a background job is actively running for the project.
+ * Single source of truth for "should the UI keep polling / show the live
+ * progress panel" -- previously duplicated (and, for PUBLISHING, out of
+ * sync) between useProjects.ts and ProjectWorkspace.tsx.
+ */
+export const IN_PROGRESS_STATUSES: ProjectStatus[] = [
+  "PLANNING",
+  "SCRIPT_GENERATING",
+  "SCENES_GENERATING",
+  "ASSETS_GENERATING",
+  "AUDIO_GENERATING",
+  "RENDERING",
+  "QUALITY_CHECK",
+  "PUBLISHING",
+];
 
 export type AspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
 

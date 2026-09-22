@@ -63,10 +63,23 @@ export function startVisualGenerationWorker(): Worker {
 
         const counts = await jobService.countByTypeAndStatus(projectId, "VISUAL_GENERATION", pipelineRunId);
         if (counts.total > 0 && counts.completed + counts.failed === counts.total) {
+          // Every scene's visual-generation job runs concurrently
+          // (worker concurrency: 3), so the last two or three can finish
+          // within milliseconds of each other and *all* observe "all
+          // done" here -- this branch runs once per scene that happens
+          // to be the last one to complete, not once per project. The
+          // per-scene idempotencyKey below is what collapses those
+          // redundant firings down to exactly one VOICE_GENERATION job
+          // per scene instead of enqueueing the whole batch N times.
           const scenes = await prisma.scene.findMany({ where: { projectId } });
           await projectService.transitionStatus(projectId, "AUDIO_GENERATING");
           for (const s of scenes) {
-            await enqueueJob({ projectId, type: "VOICE_GENERATION", payload: { pipelineRunId, sceneId: s.id } });
+            await enqueueJob({
+              projectId,
+              type: "VOICE_GENERATION",
+              payload: { pipelineRunId, sceneId: s.id },
+              idempotencyKey: `voice-generation:${pipelineRunId}:${s.id}`,
+            });
           }
         }
       } catch (err) {

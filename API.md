@@ -6,6 +6,7 @@ Error responses always have the shape:
 ```json
 { "error": { "code": "VALIDATION_ERROR", "message": "...", "details": { } } }
 ```
+`details` is only ever present on 4xx responses (e.g. Zod validation errors). 5xx responses omit it deliberately — it could otherwise carry a raw upstream provider error body — and log the full detail server-side instead.
 
 ## Auth
 
@@ -26,10 +27,11 @@ Error responses always have the shape:
 | DELETE | `/projects/:id` | — | Cascades to all owned rows |
 | POST | `/projects/:id/generate` | `{ targetDurationSeconds?, tone? }` | Starts the full pipeline. 202, project must be `DRAFT` or `FAILED` |
 | GET | `/projects/:id/status` | — | `{ projectStatus, failureReason, jobs: [...] }` |
-| POST | `/projects/:id/script/regenerate` | `{ tone? }` | Re-runs script + scene breakdown + character bible |
-| POST | `/projects/:id/render` | `{ aspectRatio? }` | Re-renders the final video from existing scene assets |
+| POST | `/projects/:id/cancel` | — | Transitions to `CANCELLED` and removes any not-yet-started queued jobs. 409 if the project is already terminal, or actively `PUBLISHING` (an in-flight YouTube upload can't be retroactively cancelled) |
+| POST | `/projects/:id/script/regenerate` | `{ tone? }` | Re-runs script + scene breakdown + character bible. Project must be `SCRIPT_READY` |
+| POST | `/projects/:id/render` | `{ aspectRatio? }` | Re-renders the final video from existing scene assets. Project must be `READY_FOR_REVIEW` (or, mid-pipeline, `AUDIO_GENERATING`/`QUALITY_CHECK`) |
 | POST | `/projects/:id/quality-check` | — | Runs the AI quality check against the active script |
-| POST | `/projects/:id/youtube/publish` | `{ youtubeAccountId, title, description, tags[], visibility, confirmed: true }` | `confirmed` must be `true` (Zod-enforced literal) — this is the only path that can trigger a YouTube upload |
+| POST | `/projects/:id/youtube/publish` | `{ youtubeAccountId, title, description, tags[], visibility, confirmed: true }` | `confirmed` must be `true` (Zod-enforced literal) — this is the only path that can trigger a YouTube upload. Project must be `READY_FOR_REVIEW`; atomically claims a `PUBLISHING` status so a double-click or duplicate request can't upload the same video twice (see ARCHITECTURE.md) |
 
 ## Scenes
 

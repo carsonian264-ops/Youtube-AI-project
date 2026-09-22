@@ -9,10 +9,17 @@ const STAGES: { key: string; label: string; statuses: ProjectStatus[] }[] = [
   { key: "voice", label: "Voice", statuses: ["AUDIO_GENERATING"] },
   { key: "video", label: "Video", statuses: ["RENDERING"] },
   { key: "review", label: "Review", statuses: ["QUALITY_CHECK", "READY_FOR_REVIEW"] },
-  { key: "publish", label: "Publish", statuses: ["PUBLISHED"] },
+  { key: "publish", label: "Publish", statuses: ["PUBLISHING", "PUBLISHED"] },
 ];
 
 function stageState(stageIndex: number, currentIndex: number, status: ProjectStatus): "done" | "active" | "waiting" | "failed" {
+  // FAILED/CANCELLED aren't in any stage's status list, so there's no
+  // reliable way to know *which* stage it stopped at from this status
+  // alone -- showing every stage as plain "waiting" is honest; guessing
+  // stage 1 (the old `Math.max(0, -1)` fallback) would actively mislead
+  // ("Idea" marked failed for a project that died during rendering).
+  // The StatusBadge above already communicates FAILED/CANCELLED clearly.
+  if (currentIndex === -1) return "waiting";
   if (status === "FAILED" && stageIndex === currentIndex) return "failed";
   if (stageIndex < currentIndex) return "done";
   if (stageIndex === currentIndex) return "active";
@@ -20,10 +27,7 @@ function stageState(stageIndex: number, currentIndex: number, status: ProjectSta
 }
 
 export function PipelineStages({ status }: { status: ProjectStatus }) {
-  const currentIndex = Math.max(
-    0,
-    STAGES.findIndex((s) => s.statuses.includes(status)),
-  );
+  const currentIndex = STAGES.findIndex((s) => s.statuses.includes(status));
 
   return (
     <div className="card overflow-x-auto p-5">

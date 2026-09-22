@@ -86,6 +86,10 @@ export function startPublishingWorker(): Worker {
         logger.error({ err, projectId, jobId, publishingJobId }, "Publishing worker failed");
         await prisma.publishingJob.update({ where: { id: publishingJobId }, data: { status: "FAILED", errorMessage: message } }).catch(() => undefined);
         await jobService.markFailed(jobId, message, false);
+        // Revert the PUBLISHING claim so the project isn't stranded in a
+        // state the API layer won't let anything transition out of --
+        // the user can review the failure and retry publishing.
+        await projectService.transitionStatusIfCurrent(projectId, ["PUBLISHING"], "READY_FOR_REVIEW").catch(() => undefined);
         throw err;
       }
     },

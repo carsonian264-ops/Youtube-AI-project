@@ -77,6 +77,31 @@ export class ProjectService {
     });
   }
 
+  /**
+   * Compare-and-swap transition: only actually moves the project's status
+   * (and only returns true) if it is still in one of `expectedFrom` at the
+   * moment the UPDATE runs. Every route that kicks off a background stage
+   * -- generate/render/quality-check/publish -- reads the current status,
+   * decides it's legal to proceed, *then* does work; two requests racing
+   * through that same read-then-act window would otherwise both pass the
+   * check and both enqueue a duplicate job (or, for publishing, upload
+   * the same video to YouTube twice). Postgres serializes concurrent
+   * UPDATEs to the same row, so of two racing calls only one can match
+   * the WHERE clause and actually flip the status -- the loser's
+   * `updateMany` affects zero rows, and callers use that signal to skip
+   * their side effects instead of performing them a second time.
+   */
+  async transitionStatusIfCurrent(projectId: string, expectedFrom: ProjectStatus[], to: ProjectStatus): Promise<boolean> {
+    for (const from of expectedFrom) {
+      ProjectStateMachine.assertTransition(from, to);
+    }
+    const result = await prisma.project.updateMany({
+      where: { id: projectId, status: { in: expectedFrom } },
+      data: { status: to, failureReason: null },
+    });
+    return result.count === 1;
+  }
+
   async getFullWorkspace(userId: string, projectId: string) {
     const project = await this.getOwned(userId, projectId);
     const [scripts, scenes, characters, assets, jobs, videos, thumbnails] = await Promise.all([

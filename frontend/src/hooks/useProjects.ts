@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { AspectRatio, Project, ProjectWorkspace } from "@/types";
+import { IN_PROGRESS_STATUSES, type AspectRatio, type Project, type ProjectWorkspace } from "@/types";
 
 export function useProjects() {
   return useQuery({
@@ -8,16 +8,6 @@ export function useProjects() {
     queryFn: async () => (await api.get<Project[]>("/projects")).data,
   });
 }
-
-const IN_PROGRESS_STATUSES = [
-  "PLANNING",
-  "SCRIPT_GENERATING",
-  "SCENES_GENERATING",
-  "ASSETS_GENERATING",
-  "AUDIO_GENERATING",
-  "RENDERING",
-  "QUALITY_CHECK",
-];
 
 export function useProject(projectId: string | undefined) {
   return useQuery({
@@ -89,6 +79,17 @@ export function useRenderProject(projectId: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/projects/${projectId}/render`)).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
+export function useCancelProject(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post<Project>(`/projects/${projectId}/cancel`)).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
   });
 }
 

@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, getErrorMessage } from "@/lib/api";
 import {
+  useCancelProject,
   useGenerateProject,
   useGenerateSceneVisual,
   useGenerateSceneVoice,
@@ -17,17 +18,7 @@ import { PipelineStages } from "@/components/PipelineStages";
 import { JobsProgress } from "@/components/JobsProgress";
 import { ErrorState, LoadingState } from "@/components/States";
 import { useToast } from "@/components/Toast";
-import type { Asset, Character, Scene, Script, Thumbnail, Video, YoutubeAccount } from "@/types";
-
-const IN_PROGRESS_STATUSES = [
-  "PLANNING",
-  "SCRIPT_GENERATING",
-  "SCENES_GENERATING",
-  "ASSETS_GENERATING",
-  "AUDIO_GENERATING",
-  "RENDERING",
-  "QUALITY_CHECK",
-];
+import { IN_PROGRESS_STATUSES, type Asset, type Character, type Scene, type Script, type Thumbnail, type Video, type YoutubeAccount } from "@/types";
 
 type Tab = "script" | "scenes" | "characters" | "assets" | "video" | "publish";
 
@@ -43,6 +34,8 @@ export default function ProjectWorkspace() {
   const regenerateScript = useRegenerateScript(id ?? "");
   const renderProject = useRenderProject(id ?? "");
   const runQualityCheck = useRunQualityCheck(id ?? "");
+  const cancelProject = useCancelProject(id ?? "");
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   async function runAction<T>(action: () => Promise<T>, successMessage: string) {
     try {
@@ -87,7 +80,10 @@ export default function ProjectWorkspace() {
               Regenerate script
             </button>
           )}
-          {(project.status === "SCENES_READY" || project.status === "READY_FOR_REVIEW") && scenes.length > 0 && (
+          {/* Only READY_FOR_REVIEW is a legal source for a manual re-render --
+              SCENES_READY has no visual/voice assets yet, so rendering from
+              there would just fail at the FFmpeg stage. */}
+          {project.status === "READY_FOR_REVIEW" && scenes.length > 0 && (
             <button className="btn-secondary" onClick={() => runAction(() => renderProject.mutateAsync(), "Render started")}>
               Re-render video
             </button>
@@ -97,6 +93,28 @@ export default function ProjectWorkspace() {
               Run quality check
             </button>
           )}
+          {!["DRAFT", "PUBLISHING", "PUBLISHED", "CANCELLED"].includes(project.status) &&
+            (confirmingCancel ? (
+              <>
+                <button
+                  className="btn-danger"
+                  disabled={cancelProject.isPending}
+                  onClick={async () => {
+                    await runAction(() => cancelProject.mutateAsync(), "Project cancelled");
+                    setConfirmingCancel(false);
+                  }}
+                >
+                  {cancelProject.isPending ? "Cancelling..." : "Confirm cancel"}
+                </button>
+                <button className="btn-secondary" onClick={() => setConfirmingCancel(false)}>
+                  Never mind
+                </button>
+              </>
+            ) : (
+              <button className="btn-secondary" onClick={() => setConfirmingCancel(true)}>
+                Cancel project
+              </button>
+            ))}
         </div>
       </div>
 
@@ -385,7 +403,9 @@ function PublishTab({
     <div className="card max-w-2xl space-y-4 p-6">
       {!canPublish && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          The project must reach "Ready for review" before it can be published.
+          {projectStatus === "PUBLISHING"
+            ? "Publishing is already in progress for this project."
+            : 'The project must reach "Ready for review" before it can be published.'}
         </p>
       )}
 

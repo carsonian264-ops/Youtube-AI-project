@@ -6,6 +6,7 @@ import { env } from "@/config/env";
 import { projectService } from "@/services/project/ProjectService";
 import { enqueueJob } from "@/queues/enqueue";
 import { encryptSecret } from "@/utils/crypto";
+import { signOAuthState, verifyOAuthState } from "@/services/auth/oauthState";
 import { AppError, NotFoundError } from "@/utils/errors";
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"];
@@ -28,7 +29,7 @@ export async function startOAuth(req: Request, res: Response): Promise<void> {
     access_type: "offline",
     prompt: "consent",
     scope: SCOPES,
-    state: req.user!.id,
+    state: signOAuthState(req.user!.id),
   });
   res.status(200).json({ url });
 }
@@ -37,7 +38,7 @@ export async function startOAuth(req: Request, res: Response): Promise<void> {
 export async function oauthCallback(req: Request, res: Response): Promise<void> {
   const client = oauthClient();
   const code = req.query.code as string;
-  const userId = req.query.state as string;
+  const userId = verifyOAuthState(req.query.state);
 
   const { tokens } = await client.getToken(code);
   if (!tokens.access_token || !tokens.refresh_token) {
@@ -94,39 +95,52 @@ export async function listYoutubeAccounts(req: Request, res: Response): Promise<
 export async function publishToYoutube(req: Request, res: Response): Promise<void> {
   const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
 
-  if (project.status !== "READY_FOR_REVIEW") {
-    throw new AppError(
-      `Project must be READY_FOR_REVIEW before publishing (currently ${project.status})`,
-      409,
-      "INVALID_STATE_TRANSITION",
-    );
-  }
-
   const account = await prisma.youtubeAccount.findUnique({ where: { id: req.body.youtubeAccountId } });
   if (!account || account.userId !== req.user!.id) {
     throw new NotFoundError("YouTube account");
   }
 
-  const publishingJob = await prisma.publishingJob.create({
-    data: {
+  // Atomically claim the project for publishing: a plain "is it
+  // READY_FOR_REVIEW" check would let a double-click or a retried
+  // request pass twice and create two PublishingJob rows, uploading the
+  // same video to YouTube twice. Only the request whose UPDATE actually
+  // flips the status proceeds; everyone else gets a clear 409.
+  const claimed = await projectService.transitionStatusIfCurrent(project.id, ["READY_FOR_REVIEW"], "PUBLISHING");
+  if (!claimed) {
+    throw new AppError(
+      `Project must be READY_FOR_REVIEW before publishing (currently ${project.status}, or a publish attempt is already in progress)`,
+      409,
+      "INVALID_STATE_TRANSITION",
+    );
+  }
+
+  try {
+    const publishingJob = await prisma.publishingJob.create({
+      data: {
+        projectId: project.id,
+        youtubeAccountId: account.id,
+        title: req.body.title,
+        description: req.body.description,
+        tags: req.body.tags ?? [],
+        visibility: req.body.visibility ?? "PRIVATE",
+        confirmedByUser: true,
+        status: "PENDING",
+      },
+    });
+
+    const job = await enqueueJob({
       projectId: project.id,
-      youtubeAccountId: account.id,
-      title: req.body.title,
-      description: req.body.description,
-      tags: req.body.tags ?? [],
-      visibility: req.body.visibility ?? "PRIVATE",
-      confirmedByUser: true,
-      status: "PENDING",
-    },
-  });
+      type: "PUBLISHING",
+      payload: { publishingJobId: publishingJob.id },
+    });
 
-  const job = await enqueueJob({
-    projectId: project.id,
-    type: "PUBLISHING",
-    payload: { publishingJobId: publishingJob.id },
-  });
-
-  res.status(202).json({ publishingJobId: publishingJob.id, jobId: job.id });
+    res.status(202).json({ publishingJobId: publishingJob.id, jobId: job.id });
+  } catch (err) {
+    // Don't strand the project in PUBLISHING if we claimed the status
+    // but failed before the actual upload was ever enqueued.
+    await projectService.transitionStatusIfCurrent(project.id, ["PUBLISHING"], "READY_FOR_REVIEW").catch(() => undefined);
+    throw err;
+  }
 }
 
 export async function getPublishingJob(req: Request, res: Response): Promise<void> {

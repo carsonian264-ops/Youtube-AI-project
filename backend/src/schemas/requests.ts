@@ -38,6 +38,10 @@ export const GenerateProjectSchema = z.object({
   tone: z.string().max(200).optional(),
 });
 
+export const RegenerateScriptSchema = z.object({
+  tone: z.string().max(200).optional(),
+});
+
 export const RegenerateSceneSchema = z.object({
   instructions: z.string().max(1000).optional(),
 });
