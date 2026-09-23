@@ -138,7 +138,17 @@ export class FFmpegRenderer implements VideoRenderer {
   }
 
   private async burnCaptions(videoPath: string, srtPath: string, outputPath: string): Promise<void> {
-    const escaped = srtPath.replace(/:/g, "\\:").replace(/'/g, "\\'");
+    // FFmpeg's filtergraph parser treats a bare backslash inside a
+    // single-quoted filter argument as an escape character for whatever
+    // follows it -- so a raw Windows path like "C:\Users\...\file.srt"
+    // gets every backslash silently swallowed by the time it reaches the
+    // subtitles filter, leaving an unopenable, mangled path (this is a
+    // well-known FFmpeg-on-Windows gotcha, not specific to this codebase).
+    // Converting to forward slashes first sidesteps it entirely -- Windows
+    // itself accepts forward slashes in paths just fine -- and the drive
+    // letter's colon still needs its own escape since ':' is the filter
+    // option separator.
+    const escaped = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
     await this.run([
       "-y",
       "-i",
