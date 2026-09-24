@@ -10,6 +10,7 @@ import { MockVisualGenerationProvider } from "./visual/MockVisualGenerationProvi
 import type { VoiceGenerationProvider } from "./voice/VoiceGenerationProvider";
 import { TTSProvider } from "./voice/TTSProvider";
 import { PollinationsVoiceProvider } from "./voice/PollinationsVoiceProvider";
+import { EdgeVoiceProvider } from "./voice/EdgeVoiceProvider";
 import { MockVoiceGenerationProvider } from "./voice/MockVoiceGenerationProvider";
 import type { StorageProvider } from "./storage/StorageProvider";
 import { LocalStorageProvider } from "./storage/LocalStorageProvider";
@@ -90,6 +91,9 @@ export function createVoiceGenerationProvider(): VoiceGenerationProvider {
       throw new Error("POLLINATIONS_API_KEY is not configured but VOICE_PROVIDER=pollinations");
     }
     return new PollinationsVoiceProvider({ apiKey: env.POLLINATIONS_API_KEY, baseUrl: env.POLLINATIONS_BASE_URL });
+  }
+  if (env.VOICE_PROVIDER === "edge-tts") {
+    return new EdgeVoiceProvider();
   }
   return new MockVoiceGenerationProvider();
 }
