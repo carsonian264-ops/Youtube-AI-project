@@ -9,6 +9,7 @@ import { PollinationsProvider } from "./visual/PollinationsProvider";
 import { MockVisualGenerationProvider } from "./visual/MockVisualGenerationProvider";
 import type { VoiceGenerationProvider } from "./voice/VoiceGenerationProvider";
 import { TTSProvider } from "./voice/TTSProvider";
+import { PollinationsVoiceProvider } from "./voice/PollinationsVoiceProvider";
 import { MockVoiceGenerationProvider } from "./voice/MockVoiceGenerationProvider";
 import type { StorageProvider } from "./storage/StorageProvider";
 import { LocalStorageProvider } from "./storage/LocalStorageProvider";
@@ -83,6 +84,12 @@ export function createVoiceGenerationProvider(): VoiceGenerationProvider {
       throw new Error("TTS_API_KEY is not configured but VOICE_PROVIDER=tts");
     }
     return new TTSProvider({ apiKey: env.TTS_API_KEY, baseUrl: env.TTS_PROVIDER_BASE_URL });
+  }
+  if (env.VOICE_PROVIDER === "pollinations") {
+    if (!env.POLLINATIONS_API_KEY) {
+      throw new Error("POLLINATIONS_API_KEY is not configured but VOICE_PROVIDER=pollinations");
+    }
+    return new PollinationsVoiceProvider({ apiKey: env.POLLINATIONS_API_KEY, baseUrl: env.POLLINATIONS_BASE_URL });
   }
   return new MockVoiceGenerationProvider();
 }

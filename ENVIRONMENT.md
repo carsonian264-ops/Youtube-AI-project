@@ -49,11 +49,11 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `POLLINATIONS_API_KEY` | only if `VISUAL_PROVIDER=pollinations` | The "secret key" from a free pollinations.ai account -- unauthenticated use is rate-limited to ~1 image/hour/IP, too slow for a multi-scene project |
 | `POLLINATIONS_BASE_URL` | no | Default `https://gen.pollinations.ai` |
 
-## Voice generation (TTS)
+## Voice generation: TTS / Pollinations
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VOICE_PROVIDER` | no | `mock` (default) or `tts` |
+| `VOICE_PROVIDER` | no | `mock` (default), `tts` (paid), or `pollinations` (free account, reuses `POLLINATIONS_API_KEY`/`POLLINATIONS_BASE_URL` from the visual generation section above) |
 | `TTS_API_KEY` | only if `VOICE_PROVIDER=tts` | |
 | `TTS_PROVIDER_BASE_URL` | no | Default is an ElevenLabs-compatible endpoint |
 

@@ -35,7 +35,7 @@ const envSchema = z
     POLLINATIONS_API_KEY: z.string().optional(),
     POLLINATIONS_BASE_URL: z.string().url().default("https://gen.pollinations.ai"),
 
-    VOICE_PROVIDER: providerEnum(["mock", "tts"]).default("mock"),
+    VOICE_PROVIDER: providerEnum(["mock", "tts", "pollinations"]).default("mock"),
     TTS_API_KEY: z.string().optional(),
     TTS_PROVIDER_BASE_URL: z.string().url().default("https://api.elevenlabs.io"),
 
@@ -92,6 +92,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["TTS_API_KEY"],
         message: "TTS_API_KEY is required when VOICE_PROVIDER=tts",
+      });
+    }
+    if (val.VOICE_PROVIDER === "pollinations" && !val.POLLINATIONS_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POLLINATIONS_API_KEY"],
+        message: "POLLINATIONS_API_KEY is required when VOICE_PROVIDER=pollinations",
       });
     }
     if (val.STORAGE_PROVIDER === "s3") {
