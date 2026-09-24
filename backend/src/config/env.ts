@@ -35,7 +35,7 @@ const envSchema = z
     POLLINATIONS_API_KEY: z.string().optional(),
     POLLINATIONS_BASE_URL: z.string().url().default("https://gen.pollinations.ai"),
 
-    VOICE_PROVIDER: providerEnum(["mock", "tts", "pollinations", "edge-tts"]).default("mock"),
+    VOICE_PROVIDER: providerEnum(["mock", "tts", "pollinations", "edge-tts", "windows-sapi"]).default("mock"),
     TTS_API_KEY: z.string().optional(),
     TTS_PROVIDER_BASE_URL: z.string().url().default("https://api.elevenlabs.io"),
 

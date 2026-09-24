@@ -49,11 +49,11 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `POLLINATIONS_API_KEY` | only if `VISUAL_PROVIDER=pollinations` | The "secret key" from a free pollinations.ai account -- unauthenticated use is rate-limited to ~1 image/hour/IP, too slow for a multi-scene project |
 | `POLLINATIONS_BASE_URL` | no | Default `https://gen.pollinations.ai` |
 
-## Voice generation: TTS / Pollinations / Edge TTS
+## Voice generation: TTS / Pollinations / Edge TTS / Windows SAPI
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VOICE_PROVIDER` | no | `mock` (default), `tts` (paid), `pollinations` (paid -- unlike its image endpoint, Pollinations' voice endpoint requires a funded balance), or `edge-tts` (free, no account/key needed at all -- uses Microsoft Edge's Read Aloud service via the `@travisvn/edge-tts` package) |
+| `VOICE_PROVIDER` | no | `mock` (default), `tts` (paid), `pollinations` (paid -- unlike its image endpoint, Pollinations' voice endpoint requires a funded balance), `edge-tts` (free, no account/key -- uses Microsoft Edge's Read Aloud service via `@travisvn/edge-tts`, but its WebSocket connection has been observed to hang indefinitely rather than error on some networks), or `windows-sapi` (free, no account/key, no network call at all -- uses the TTS engine already built into Windows via PowerShell + `System.Speech`, transcoded to MP3 with the app's existing FFmpeg dependency; Windows-only, the most reliable free option) |
 | `TTS_API_KEY` | only if `VOICE_PROVIDER=tts` | |
 | `TTS_PROVIDER_BASE_URL` | no | Default is an ElevenLabs-compatible endpoint |
 

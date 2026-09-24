@@ -11,6 +11,7 @@ import type { VoiceGenerationProvider } from "./voice/VoiceGenerationProvider";
 import { TTSProvider } from "./voice/TTSProvider";
 import { PollinationsVoiceProvider } from "./voice/PollinationsVoiceProvider";
 import { EdgeVoiceProvider } from "./voice/EdgeVoiceProvider";
+import { WindowsSapiVoiceProvider } from "./voice/WindowsSapiVoiceProvider";
 import { MockVoiceGenerationProvider } from "./voice/MockVoiceGenerationProvider";
 import type { StorageProvider } from "./storage/StorageProvider";
 import { LocalStorageProvider } from "./storage/LocalStorageProvider";
@@ -94,6 +95,9 @@ export function createVoiceGenerationProvider(): VoiceGenerationProvider {
   }
   if (env.VOICE_PROVIDER === "edge-tts") {
     return new EdgeVoiceProvider();
+  }
+  if (env.VOICE_PROVIDER === "windows-sapi") {
+    return new WindowsSapiVoiceProvider();
   }
   return new MockVoiceGenerationProvider();
 }
