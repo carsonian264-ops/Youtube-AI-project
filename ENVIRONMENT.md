@@ -39,13 +39,15 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `ANTHROPIC_API_KEY` | only if `AI_PROVIDER=claude` | Never sent to the frontend |
 | `ANTHROPIC_MODEL` | no | Default `claude-sonnet-5` |
 
-## Visual generation: OpenArt
+## Visual generation: OpenArt / Pollinations
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VISUAL_PROVIDER` | no | `mock` (default) or `openart` |
+| `VISUAL_PROVIDER` | no | `mock` (default), `openart` (paid), or `pollinations` (free account) |
 | `OPENART_API_KEY` | only if `VISUAL_PROVIDER=openart` | |
 | `OPENART_BASE_URL` | no | Default `https://api.openart.ai` |
+| `POLLINATIONS_API_KEY` | only if `VISUAL_PROVIDER=pollinations` | The "secret key" from a free pollinations.ai account -- unauthenticated use is rate-limited to ~1 image/hour/IP, too slow for a multi-scene project |
+| `POLLINATIONS_BASE_URL` | no | Default `https://gen.pollinations.ai` |
 
 ## Voice generation (TTS)
 

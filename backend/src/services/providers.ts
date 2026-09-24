@@ -5,6 +5,7 @@ import { ClaudeProvider } from "./ai/ClaudeProvider";
 import { MockAIContentProvider } from "./ai/MockAIContentProvider";
 import type { VisualGenerationProvider } from "./visual/VisualGenerationProvider";
 import { OpenArtProvider } from "./visual/OpenArtProvider";
+import { PollinationsProvider } from "./visual/PollinationsProvider";
 import { MockVisualGenerationProvider } from "./visual/MockVisualGenerationProvider";
 import type { VoiceGenerationProvider } from "./voice/VoiceGenerationProvider";
 import { TTSProvider } from "./voice/TTSProvider";
@@ -66,6 +67,12 @@ export function createVisualGenerationProvider(): VisualGenerationProvider {
       throw new Error("OPENART_API_KEY is not configured but VISUAL_PROVIDER=openart");
     }
     return new OpenArtProvider({ apiKey: env.OPENART_API_KEY, baseUrl: env.OPENART_BASE_URL });
+  }
+  if (env.VISUAL_PROVIDER === "pollinations") {
+    if (!env.POLLINATIONS_API_KEY) {
+      throw new Error("POLLINATIONS_API_KEY is not configured but VISUAL_PROVIDER=pollinations");
+    }
+    return new PollinationsProvider({ apiKey: env.POLLINATIONS_API_KEY, baseUrl: env.POLLINATIONS_BASE_URL });
   }
   return new MockVisualGenerationProvider();
 }

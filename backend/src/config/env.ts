@@ -29,9 +29,11 @@ const envSchema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
 
-    VISUAL_PROVIDER: providerEnum(["mock", "openart"]).default("mock"),
+    VISUAL_PROVIDER: providerEnum(["mock", "openart", "pollinations"]).default("mock"),
     OPENART_API_KEY: z.string().optional(),
     OPENART_BASE_URL: z.string().url().default("https://api.openart.ai"),
+    POLLINATIONS_API_KEY: z.string().optional(),
+    POLLINATIONS_BASE_URL: z.string().url().default("https://gen.pollinations.ai"),
 
     VOICE_PROVIDER: providerEnum(["mock", "tts"]).default("mock"),
     TTS_API_KEY: z.string().optional(),
@@ -76,6 +78,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["OPENART_API_KEY"],
         message: "OPENART_API_KEY is required when VISUAL_PROVIDER=openart",
+      });
+    }
+    if (val.VISUAL_PROVIDER === "pollinations" && !val.POLLINATIONS_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POLLINATIONS_API_KEY"],
+        message: "POLLINATIONS_API_KEY is required when VISUAL_PROVIDER=pollinations",
       });
     }
     if (val.VOICE_PROVIDER === "tts" && !val.TTS_API_KEY) {
