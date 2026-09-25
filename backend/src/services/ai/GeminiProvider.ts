@@ -86,7 +86,14 @@ export class GeminiProvider implements AIContentProvider {
 
         if (!res.ok) {
           const body = await res.text().catch(() => "");
-          throw new ProviderError("gemini", `Gemini API request failed (${res.status}): ${body}`, res.status >= 500);
+          // 429 (rate limit / free-tier daily quota exhausted) is just as
+          // much "this provider can't serve us right now" as a 5xx -- an
+          // immediate retry won't help either, but the caller falling
+          // back to another provider (see FallbackAIContentProvider)
+          // will. Only a genuine client error (bad request, bad API key)
+          // should be treated as non-retryable.
+          const retryable = res.status >= 500 || res.status === 429;
+          throw new ProviderError("gemini", `Gemini API request failed (${res.status}): ${body}`, retryable);
         }
 
         const json = (await res.json()) as {
