@@ -58,8 +58,14 @@ const envSchema = z
     STORAGE_SECRET_KEY: z.string().optional(),
     STORAGE_PUBLIC_BASE_URL: z.string().optional(),
 
-    FFMPEG_PATH: z.string().default("/usr/bin/ffmpeg"),
-    FFPROBE_PATH: z.string().default("/usr/bin/ffprobe"),
+    // Bare command names, not hardcoded absolute paths: those only ever
+    // matched Linux's apt layout (/usr/bin/ffmpeg) and broke on every
+    // other OS. Relying on PATH resolution (which Node's child_process
+    // already does for a bare command) works on Linux, macOS and Windows
+    // alike, as long as FFmpeg is installed and on PATH -- which every
+    // installer (apt, brew, winget) already arranges.
+    FFMPEG_PATH: z.string().default("ffmpeg"),
+    FFPROBE_PATH: z.string().default("ffprobe"),
 
     PUBLISHING_PROVIDER: providerEnum(["mock", "youtube"]).default("mock"),
     YOUTUBE_CLIENT_ID: z.string().optional(),

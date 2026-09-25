@@ -76,8 +76,8 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 
 | Variable | Required | Default |
 |---|---|---|
-| `FFMPEG_PATH` | no | `/usr/bin/ffmpeg` |
-| `FFPROBE_PATH` | no | `/usr/bin/ffprobe` |
+| `FFMPEG_PATH` | no | `ffmpeg` -- a bare command name resolved via PATH, so it works on Linux/macOS/Windows alike as long as FFmpeg is installed and on PATH |
+| `FFPROBE_PATH` | no | `ffprobe` -- same as above |
 
 ## Publishing: YouTube
 
