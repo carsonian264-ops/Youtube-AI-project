@@ -5,6 +5,7 @@ import path from "node:path";
 import { env } from "@/config/env";
 import { ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
+import { probeDurationSeconds } from "@/utils/mediaProbe";
 import type { RenderAspectRatio, RenderProjectInput, RenderResult, VideoRenderer } from "./VideoRenderer";
 
 const RESOLUTION: Record<RenderAspectRatio, { width: number; height: number }> = {
@@ -61,7 +62,7 @@ export class FFmpegRenderer implements VideoRenderer {
       await fs.mkdir(path.dirname(input.outputPath), { recursive: true });
       await fs.copyFile(currentPath, input.outputPath);
 
-      const durationSeconds = await this.probeDuration(input.outputPath);
+      const durationSeconds = await probeDurationSeconds(input.outputPath);
       return { outputPath: input.outputPath, durationSeconds, width, height };
     } finally {
       await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
@@ -74,7 +75,7 @@ export class FFmpegRenderer implements VideoRenderer {
     height: number,
     outputPath: string,
   ): Promise<void> {
-    const audioDuration = scene.audioPath ? await this.probeDuration(scene.audioPath) : 0;
+    const audioDuration = scene.audioPath ? await probeDurationSeconds(scene.audioPath) : 0;
     const duration = Math.max(scene.durationSeconds, audioDuration, 1);
     const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}`;
 
@@ -159,25 +160,6 @@ export class FFmpegRenderer implements VideoRenderer {
       "copy",
       outputPath,
     ]);
-  }
-
-  private async probeDuration(filePath: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const args = ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath];
-      const proc = spawn(env.FFPROBE_PATH, args);
-      let stdout = "";
-      let stderr = "";
-      proc.stdout.on("data", (chunk) => (stdout += chunk.toString()));
-      proc.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-      proc.on("error", (err) => reject(new ProviderError("ffprobe", err.message, false)));
-      proc.on("close", (code) => {
-        if (code !== 0) {
-          reject(new ProviderError("ffprobe", `ffprobe exited with code ${code}: ${stderr}`, false));
-          return;
-        }
-        resolve(parseFloat(stdout.trim()) || 0);
-      });
-    });
   }
 
   private run(args: string[]): Promise<void> {

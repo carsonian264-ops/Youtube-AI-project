@@ -8,6 +8,7 @@ import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { createVoiceGenerationProvider } from "@/services/providers";
 import { logger } from "@/utils/logger";
+import { measureAudioDurationSeconds } from "@/utils/mediaProbe";
 
 interface Payload {
   jobId: string;
@@ -31,6 +32,7 @@ export function startVoiceGenerationWorker(): Worker {
 
         const voiceProvider = createVoiceGenerationProvider();
         const audio = await voiceProvider.generateSpeech({ text: scene.narration });
+        const durationSeconds = await measureAudioDurationSeconds(audio.data);
 
         await assetService.recordAsset({
           projectId,
@@ -41,14 +43,14 @@ export function startVoiceGenerationWorker(): Worker {
           data: audio.data,
           mimeType: audio.mimeType,
           extension: "mp3",
-          metadata: { ...audio.metadata, durationSeconds: audio.durationSeconds },
+          metadata: { ...audio.metadata, durationSeconds },
         });
 
-        if (audio.durationSeconds && audio.durationSeconds > scene.durationSeconds) {
-          await prisma.scene.update({ where: { id: sceneId }, data: { durationSeconds: audio.durationSeconds } });
+        if (durationSeconds > 0) {
+          await prisma.scene.update({ where: { id: sceneId }, data: { durationSeconds } });
         }
 
-        await jobService.markCompleted(jobId, { sceneId, durationSeconds: audio.durationSeconds });
+        await jobService.markCompleted(jobId, { sceneId, durationSeconds });
 
         const counts = await jobService.countByTypeAndStatus(projectId, "VOICE_GENERATION", pipelineRunId);
         if (counts.total > 0 && counts.completed + counts.failed === counts.total) {
