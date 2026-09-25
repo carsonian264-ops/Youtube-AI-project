@@ -1,5 +1,13 @@
-import "dotenv/config";
+import path from "node:path";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+// Load the repo-root .env explicitly rather than relying on dotenv's
+// default cwd-relative lookup: npm workspaces run this script with its
+// cwd set to backend/, not the repo root where .env actually lives (see
+// ENVIRONMENT.md), so the bare `import "dotenv/config"` silently found
+// nothing on a clean checkout.
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 /**
  * Central environment configuration. Every variable the application reads
