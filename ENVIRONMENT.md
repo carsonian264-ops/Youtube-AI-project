@@ -39,7 +39,7 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `ANTHROPIC_API_KEY` | only if `AI_PROVIDER=claude` | Never sent to the frontend |
 | `ANTHROPIC_MODEL` | no | Default `claude-sonnet-5` |
 | `GEMINI_API_KEY` | only if `AI_PROVIDER=gemini` | Never sent to the frontend |
-| `GEMINI_MODEL` | no | Default `gemini-2.5-flash` -- within Google's free-tier request limits |
+| `GEMINI_MODEL` | no | Default `gemini-3.8-flash` -- within Google's free-tier request limits (`gemini-2.5-flash` is deprecated for new API keys) |
 
 ## Visual generation: OpenArt / Pollinations
 
