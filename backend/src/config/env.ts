@@ -29,7 +29,7 @@ const envSchema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
     GEMINI_API_KEY: z.string().optional(),
-    GEMINI_MODEL: z.string().default("gemini-flash-latest"),
+    GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
 
     VISUAL_PROVIDER: providerEnum(["mock", "openart", "pollinations"]).default("mock"),
     OPENART_API_KEY: z.string().optional(),

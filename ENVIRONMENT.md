@@ -39,7 +39,7 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `ANTHROPIC_API_KEY` | only if `AI_PROVIDER=claude` | Never sent to the frontend |
 | `ANTHROPIC_MODEL` | no | Default `claude-sonnet-5` |
 | `GEMINI_API_KEY` | only if `AI_PROVIDER=gemini` | Never sent to the frontend |
-| `GEMINI_MODEL` | no | Default `gemini-flash-latest` -- a Google-maintained alias that always points at their current recommended flash model, avoiding the need to update this default every time Google deprecates or renames a pinned version (e.g. `gemini-2.5-flash` returns 404 for new API keys) |
+| `GEMINI_MODEL` | no | Default `gemini-3.5-flash` -- within Google's free-tier request limits. `gemini-flash-latest` (the alias for Google's newest model) was tried first but returned persistent 503 "high demand" errors right after that model's release; `gemini-2.5-flash` returns 404 for new API keys. `gemini-3.5-flash` is a good middle ground: current enough to not be deprecated soon, established enough to not be overloaded |
 
 ## Visual generation: OpenArt / Pollinations
 
