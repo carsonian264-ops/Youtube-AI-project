@@ -2,6 +2,7 @@ import { env } from "@/config/env";
 import { usageService } from "@/services/usage/UsageService";
 import type { AIContentProvider } from "./ai/AIContentProvider";
 import { ClaudeProvider } from "./ai/ClaudeProvider";
+import { FallbackAIContentProvider } from "./ai/FallbackAIContentProvider";
 import { GeminiProvider } from "./ai/GeminiProvider";
 import { MockAIContentProvider } from "./ai/MockAIContentProvider";
 import type { VisualGenerationProvider } from "./visual/VisualGenerationProvider";
@@ -44,7 +45,7 @@ export function createAIContentProvider(usage?: UsageContext): AIContentProvider
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY is not configured but AI_PROVIDER=claude");
     }
-    return new ClaudeProvider({
+    const claude = new ClaudeProvider({
       apiKey: env.ANTHROPIC_API_KEY,
       model: env.ANTHROPIC_MODEL,
       onUsage: usage
@@ -61,12 +62,17 @@ export function createAIContentProvider(usage?: UsageContext): AIContentProvider
           }
         : undefined,
     });
+    // Falls back to the mock provider on a transient outage/rate limit
+    // rather than failing the whole pipeline run -- see
+    // FallbackAIContentProvider for exactly which errors qualify.
+    return new FallbackAIContentProvider(claude, new MockAIContentProvider(), "claude");
   }
   if (env.AI_PROVIDER === "gemini") {
     if (!env.GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY is not configured but AI_PROVIDER=gemini");
     }
-    return new GeminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+    const gemini = new GeminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+    return new FallbackAIContentProvider(gemini, new MockAIContentProvider(), "gemini");
   }
   return new MockAIContentProvider();
 }
