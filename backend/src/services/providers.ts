@@ -2,6 +2,7 @@ import { env } from "@/config/env";
 import { usageService } from "@/services/usage/UsageService";
 import type { AIContentProvider } from "./ai/AIContentProvider";
 import { ClaudeProvider } from "./ai/ClaudeProvider";
+import { GeminiProvider } from "./ai/GeminiProvider";
 import { MockAIContentProvider } from "./ai/MockAIContentProvider";
 import type { VisualGenerationProvider } from "./visual/VisualGenerationProvider";
 import { OpenArtProvider } from "./visual/OpenArtProvider";
@@ -60,6 +61,12 @@ export function createAIContentProvider(usage?: UsageContext): AIContentProvider
           }
         : undefined,
     });
+  }
+  if (env.AI_PROVIDER === "gemini") {
+    if (!env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured but AI_PROVIDER=gemini");
+    }
+    return new GeminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
   }
   return new MockAIContentProvider();
 }

@@ -25,9 +25,11 @@ const envSchema = z
     JWT_EXPIRES_IN: z.string().default("7d"),
     SESSION_SECRET: z.string().min(16, "SESSION_SECRET must be at least 16 characters"),
 
-    AI_PROVIDER: providerEnum(["mock", "claude"]).default("mock"),
+    AI_PROVIDER: providerEnum(["mock", "claude", "gemini"]).default("mock"),
     ANTHROPIC_API_KEY: z.string().optional(),
     ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
 
     VISUAL_PROVIDER: providerEnum(["mock", "openart", "pollinations"]).default("mock"),
     OPENART_API_KEY: z.string().optional(),
@@ -71,6 +73,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ["ANTHROPIC_API_KEY"],
         message: "ANTHROPIC_API_KEY is required when AI_PROVIDER=claude",
+      });
+    }
+    if (val.AI_PROVIDER === "gemini" && !val.GEMINI_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_API_KEY"],
+        message: "GEMINI_API_KEY is required when AI_PROVIDER=gemini",
       });
     }
     if (val.VISUAL_PROVIDER === "openart" && !val.OPENART_API_KEY) {

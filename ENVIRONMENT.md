@@ -31,13 +31,15 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `JWT_EXPIRES_IN` | no | Default `7d` |
 | `SESSION_SECRET` | **yes** | ≥16 chars. Also used (via scrypt) to derive the key that encrypts stored YouTube OAuth tokens — see `backend/src/utils/crypto.ts`. |
 
-## AI: Anthropic Claude
+## AI: Anthropic Claude / Google Gemini
 
 | Variable | Required | Notes |
 |---|---|---|
-| `AI_PROVIDER` | no | `mock` (default) or `claude` |
+| `AI_PROVIDER` | no | `mock` (default), `claude` (paid, pay-as-you-go, no free tier), or `gemini` (Google's free tier -- no card required, get a key at aistudio.google.com) |
 | `ANTHROPIC_API_KEY` | only if `AI_PROVIDER=claude` | Never sent to the frontend |
 | `ANTHROPIC_MODEL` | no | Default `claude-sonnet-5` |
+| `GEMINI_API_KEY` | only if `AI_PROVIDER=gemini` | Never sent to the frontend |
+| `GEMINI_MODEL` | no | Default `gemini-2.5-flash` -- within Google's free-tier request limits |
 
 ## Visual generation: OpenArt / Pollinations
 
