@@ -10,7 +10,17 @@ import { decryptSecret, encryptSecret } from "@/utils/crypto";
 import { signOAuthState, verifyOAuthState } from "@/services/auth/oauthState";
 import { AppError, ConflictError, NotFoundError } from "@/utils/errors";
 
-const SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"];
+// The youtube.* scopes alone authorize uploading/reading channel data, but
+// carry no identity information -- the oauth2.userinfo.get() call below
+// (used only to get a stable Google account id for the YoutubeAccount
+// row) needs its own scope or Google rejects it with a 401 "missing
+// required authentication credential", not an insufficient-scope error,
+// which makes this easy to misdiagnose as a credentials problem.
+const SCOPES = [
+  "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/userinfo.profile",
+];
 
 function oauthClient() {
   if (!env.YOUTUBE_CLIENT_ID || !env.YOUTUBE_CLIENT_SECRET || !env.YOUTUBE_REDIRECT_URI) {
