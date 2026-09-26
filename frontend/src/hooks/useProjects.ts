@@ -6,6 +6,16 @@ export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
     queryFn: async () => (await api.get<Project[]>("/projects")).data,
+    // Mirrors useProject()'s self-polling below: while any project in the
+    // list is actively generating, the dashboard and projects list stay
+    // live on their own -- previously only the single-project workspace
+    // page did this, so a project running in the background looked frozen
+    // until you clicked into it or refreshed the page.
+    refetchInterval: (query) => {
+      const projects = query.state.data;
+      const anyInProgress = projects?.some((p) => IN_PROGRESS_STATUSES.includes(p.status));
+      return anyInProgress ? 2000 : false;
+    },
   });
 }
 
