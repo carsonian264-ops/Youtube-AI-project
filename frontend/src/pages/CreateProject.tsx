@@ -3,12 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "@/hooks/useProjects";
 import { useToast } from "@/components/Toast";
 import { getErrorMessage } from "@/lib/api";
-import type { AspectRatio } from "@/types";
+import type { AspectRatio, MusicMood } from "@/types";
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string }[] = [
   { value: "LANDSCAPE_16_9", label: "16:9 (YouTube standard)" },
   { value: "PORTRAIT_9_16", label: "9:16 (Shorts / Reels)" },
   { value: "SQUARE_1_1", label: "1:1 (Square)" },
+];
+
+const MUSIC_MOODS: { value: MusicMood; label: string }[] = [
+  { value: "NONE", label: "No music" },
+  { value: "UPBEAT", label: "Upbeat" },
+  { value: "CALM", label: "Calm" },
+  { value: "CINEMATIC", label: "Cinematic" },
+  { value: "DRAMATIC", label: "Dramatic" },
 ];
 
 export default function CreateProject() {
@@ -21,6 +29,7 @@ export default function CreateProject() {
   const [tone, setTone] = useState("confident, clear");
   const [durationMinutes, setDurationMinutes] = useState(3);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("LANDSCAPE_16_9");
+  const [musicMood, setMusicMood] = useState<MusicMood>("NONE");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -39,6 +48,7 @@ export default function CreateProject() {
         tone,
         estimatedDurationSeconds: Math.round(durationMinutes * 60),
         aspectRatio,
+        musicMood,
       });
       showToast("Project created", "success");
       navigate(`/projects/${project.id}`);
@@ -113,6 +123,26 @@ export default function CreateProject() {
                 onClick={() => setAspectRatio(option.value)}
                 className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
                   aspectRatio === option.value
+                    ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
+                    : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="label">Background music</span>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {MUSIC_MOODS.map((option) => (
+              <button
+                type="button"
+                key={option.value}
+                onClick={() => setMusicMood(option.value)}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                  musicMood === option.value
                     ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
                     : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 }`}

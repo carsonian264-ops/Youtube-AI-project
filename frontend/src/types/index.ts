@@ -34,6 +34,8 @@ export const IN_PROGRESS_STATUSES: ProjectStatus[] = [
 
 export type AspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
 
+export type MusicMood = "NONE" | "UPBEAT" | "CALM" | "CINEMATIC" | "DRAMATIC";
+
 export interface Project {
   id: string;
   userId: string;
@@ -43,6 +45,7 @@ export interface Project {
   tone: string | null;
   estimatedDurationSeconds: number | null;
   aspectRatio: AspectRatio;
+  musicMood: MusicMood;
   status: ProjectStatus;
   failureReason: string | null;
   createdAt: string;

@@ -20,6 +20,8 @@ import { LocalStorageProvider } from "./storage/LocalStorageProvider";
 import { S3StorageProvider } from "./storage/S3StorageProvider";
 import type { VideoRenderer } from "./video/VideoRenderer";
 import { FFmpegRenderer } from "./video/FFmpegRenderer";
+import type { MusicProvider } from "./music/MusicProvider";
+import { GeneratedMusicProvider } from "./music/GeneratedMusicProvider";
 import type { PublishingProvider } from "./publishing/PublishingProvider";
 import { YouTubeProvider } from "./publishing/YouTubeProvider";
 import { MockPublishingProvider } from "./publishing/MockPublishingProvider";
@@ -140,6 +142,10 @@ export function createStorageProvider(): StorageProvider {
 
 export function createVideoRenderer(): VideoRenderer {
   return new FFmpegRenderer();
+}
+
+export function createMusicProvider(): MusicProvider {
+  return new GeneratedMusicProvider();
 }
 
 export function createPublishingProvider(): PublishingProvider {

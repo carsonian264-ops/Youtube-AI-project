@@ -1,10 +1,7 @@
-import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { env } from "@/config/env";
-import { ProviderError } from "@/utils/errors";
-import { logger } from "@/utils/logger";
+import { runFfmpeg } from "@/utils/ffmpegExec";
 import { probeDurationSeconds } from "@/utils/mediaProbe";
 import type { RenderAspectRatio, RenderProjectInput, RenderResult, VideoRenderer } from "./VideoRenderer";
 
@@ -105,7 +102,7 @@ export class FFmpegRenderer implements VideoRenderer {
       outputPath,
     );
 
-    await this.run(args);
+    await runFfmpeg(args);
   }
 
   private async concatClips(clipPaths: string[], workDir: string, outputPath: string): Promise<void> {
@@ -113,11 +110,11 @@ export class FFmpegRenderer implements VideoRenderer {
     const listContent = clipPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
     await fs.writeFile(listPath, listContent, "utf-8");
 
-    await this.run(["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath]);
+    await runFfmpeg(["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath]);
   }
 
   private async mixMusic(videoPath: string, musicPath: string, outputPath: string): Promise<void> {
-    await this.run([
+    await runFfmpeg([
       "-y",
       "-i",
       videoPath,
@@ -150,7 +147,7 @@ export class FFmpegRenderer implements VideoRenderer {
     // letter's colon still needs its own escape since ':' is the filter
     // option separator.
     const escaped = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
-    await this.run([
+    await runFfmpeg([
       "-y",
       "-i",
       videoPath,
@@ -160,22 +157,5 @@ export class FFmpegRenderer implements VideoRenderer {
       "copy",
       outputPath,
     ]);
-  }
-
-  private run(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      logger.debug({ args }, "Running ffmpeg");
-      const proc = spawn(env.FFMPEG_PATH, args);
-      let stderr = "";
-      proc.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-      proc.on("error", (err) => reject(new ProviderError("ffmpeg", err.message, false)));
-      proc.on("close", (code) => {
-        if (code !== 0) {
-          reject(new ProviderError("ffmpeg", `ffmpeg exited with code ${code}: ${stderr.slice(-2000)}`, false));
-          return;
-        }
-        resolve();
-      });
-    });
   }
 }

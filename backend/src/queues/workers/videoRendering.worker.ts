@@ -11,7 +11,7 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
-import { createStorageProvider, createVideoRenderer } from "@/services/providers";
+import { createMusicProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
 import { usageService } from "@/services/usage/UsageService";
 import { NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
@@ -61,51 +61,61 @@ export function startVideoRenderingWorker(): Worker {
 
         const captionsSrtPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
 
-        const renderer = createVideoRenderer();
-        const tmpOutput = path.join(os.tmpdir(), `final-${randomUUID()}.mp4`);
-        const result = await renderer.render({
-          scenes: sceneInputs,
-          captionsSrtPath,
-          aspectRatio: project.aspectRatio,
-          outputPath: tmpOutput,
-        });
-        await jobService.updateProgress(jobId, 80);
+        const musicPath =
+          project.musicMood === "NONE" ? undefined : await createMusicProvider().getTrack(project.musicMood);
 
-        const data = await fs.readFile(tmpOutput);
-        const key = `projects/${projectId}/final_video/${randomUUID()}.mp4`;
-        const uploaded = await storage.upload({ key, data, contentType: "video/mp4" });
-        await fs.rm(tmpOutput, { force: true });
-
-        await prisma.video.create({
-          data: {
-            projectId,
-            storageKey: uploaded.key,
-            url: uploaded.url,
-            durationSeconds: result.durationSeconds,
+        try {
+          const renderer = createVideoRenderer();
+          const tmpOutput = path.join(os.tmpdir(), `final-${randomUUID()}.mp4`);
+          const result = await renderer.render({
+            scenes: sceneInputs,
+            musicPath,
+            captionsSrtPath,
             aspectRatio: project.aspectRatio,
-            status: "READY",
-          },
-        });
+            outputPath: tmpOutput,
+          });
+          await jobService.updateProgress(jobId, 80);
 
-        const wallClockSeconds = (Date.now() - startedAt) / 1000;
-        await usageService.record({
-          userId: project.userId,
-          projectId,
-          type: "RENDER_SECONDS",
-          quantity: wallClockSeconds,
-          unit: "seconds",
-          metadata: { outputDurationSeconds: result.durationSeconds },
-        });
+          const data = await fs.readFile(tmpOutput);
+          const key = `projects/${projectId}/final_video/${randomUUID()}.mp4`;
+          const uploaded = await storage.upload({ key, data, contentType: "video/mp4" });
+          await fs.rm(tmpOutput, { force: true });
 
-        await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
+          await prisma.video.create({
+            data: {
+              projectId,
+              storageKey: uploaded.key,
+              url: uploaded.url,
+              durationSeconds: result.durationSeconds,
+              aspectRatio: project.aspectRatio,
+              status: "READY",
+            },
+          });
 
-        await projectService.transitionStatus(projectId, "QUALITY_CHECK");
-        await enqueueJob({
-          projectId,
-          type: "QUALITY_CHECK",
-          payload: { pipelineRunId: bullJob.data.pipelineRunId },
-          idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
-        });
+          const wallClockSeconds = (Date.now() - startedAt) / 1000;
+          await usageService.record({
+            userId: project.userId,
+            projectId,
+            type: "RENDER_SECONDS",
+            quantity: wallClockSeconds,
+            unit: "seconds",
+            metadata: { outputDurationSeconds: result.durationSeconds },
+          });
+
+          await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
+
+          await projectService.transitionStatus(projectId, "QUALITY_CHECK");
+          await enqueueJob({
+            projectId,
+            type: "QUALITY_CHECK",
+            payload: { pipelineRunId: bullJob.data.pipelineRunId },
+            idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
+          });
+        } finally {
+          if (musicPath) {
+            await fs.rm(path.dirname(musicPath), { recursive: true, force: true }).catch(() => undefined);
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Video rendering failed";
         logger.error({ err, projectId, jobId }, "Video rendering worker failed");

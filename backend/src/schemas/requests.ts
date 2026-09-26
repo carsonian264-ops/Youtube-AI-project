@@ -20,6 +20,7 @@ export const CreateProjectSchema = z.object({
   tone: z.string().max(200).optional(),
   estimatedDurationSeconds: z.number().int().positive().max(3600).optional(),
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
+  musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
 });
 
 export const UpdateProjectSchema = z.object({
@@ -27,6 +28,7 @@ export const UpdateProjectSchema = z.object({
   targetAudience: z.string().max(300).optional(),
   tone: z.string().max(200).optional(),
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
+  musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
 });
 
 export const IdParamSchema = z.object({

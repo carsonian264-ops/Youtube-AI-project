@@ -39,6 +39,14 @@ enum AspectRatio {
   SQUARE_1_1
 }
 
+enum MusicMood {
+  NONE
+  UPBEAT
+  CALM
+  CINEMATIC
+  DRAMATIC
+}
+
 enum JobType {
   CONTENT_GENERATION
   VISUAL_GENERATION
@@ -135,6 +143,7 @@ model Project {
   tone                     String?
   estimatedDurationSeconds Int?
   aspectRatio              AspectRatio   @default(LANDSCAPE_16_9)
+  musicMood                MusicMood     @default(NONE)
   status                   ProjectStatus @default(DRAFT)
   currentVersion           Int           @default(1)
   failureReason            String?

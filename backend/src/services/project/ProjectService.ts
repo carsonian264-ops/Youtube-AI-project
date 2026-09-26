@@ -1,5 +1,5 @@
 import { prisma } from "@/db/prisma";
-import type { AspectRatio, Project, ProjectStatus } from "@/generated/prisma";
+import type { AspectRatio, MusicMood, Project, ProjectStatus } from "@/generated/prisma";
 import { AuthorizationError, ConflictError, NotFoundError } from "@/utils/errors";
 import { ProjectStateMachine } from "./ProjectStateMachine";
 
@@ -10,6 +10,7 @@ export interface CreateProjectInput {
   tone?: string;
   estimatedDurationSeconds?: number;
   aspectRatio?: AspectRatio;
+  musicMood?: MusicMood;
 }
 
 export interface UpdateProjectInput {
@@ -17,6 +18,7 @@ export interface UpdateProjectInput {
   targetAudience?: string;
   tone?: string;
   aspectRatio?: AspectRatio;
+  musicMood?: MusicMood;
 }
 
 /**
@@ -38,6 +40,7 @@ export class ProjectService {
         tone: input.tone,
         estimatedDurationSeconds: input.estimatedDurationSeconds,
         aspectRatio: input.aspectRatio ?? "LANDSCAPE_16_9",
+        musicMood: input.musicMood ?? "NONE",
         status: "DRAFT",
       },
     });
