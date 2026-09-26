@@ -129,7 +129,7 @@ export class ProjectService {
 
   async getFullWorkspace(userId: string, projectId: string) {
     const project = await this.getOwned(userId, projectId);
-    const [scripts, scenes, characters, assets, jobs, videos, thumbnails] = await Promise.all([
+    const [scripts, scenes, characters, assets, jobs, videos, thumbnails, publishingJobs] = await Promise.all([
       prisma.script.findMany({ where: { projectId }, orderBy: { versionNumber: "desc" } }),
       prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } }),
       prisma.character.findMany({ where: { projectId } }),
@@ -137,8 +137,9 @@ export class ProjectService {
       prisma.job.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.video.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.thumbnail.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
+      prisma.publishingJob.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
     ]);
-    return { project, scripts, scenes, characters, assets, jobs, videos, thumbnails };
+    return { project, scripts, scenes, characters, assets, jobs, videos, thumbnails, publishingJobs };
   }
 }
 

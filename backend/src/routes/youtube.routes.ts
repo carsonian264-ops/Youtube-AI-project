@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { getPublishingJob, listYoutubeAccounts, oauthCallback, startOAuth } from "@/controllers/youtube.controller";
+import {
+  getPublishingJob,
+  getPublishingJobStats,
+  listYoutubeAccounts,
+  oauthCallback,
+  startOAuth,
+} from "@/controllers/youtube.controller";
 import { requireAuth } from "@/middleware/auth";
 import { validate } from "@/middleware/validate";
 import { IdParamSchema } from "@/schemas/requests";
@@ -17,4 +23,10 @@ youtubeRouter.get(
   requireAuth,
   validate(IdParamSchema, "params"),
   asyncHandler(getPublishingJob),
+);
+youtubeRouter.get(
+  "/publishing-jobs/:id/stats",
+  requireAuth,
+  validate(IdParamSchema, "params"),
+  asyncHandler(getPublishingJobStats),
 );

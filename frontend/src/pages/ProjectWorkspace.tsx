@@ -19,7 +19,18 @@ import { PipelineStages } from "@/components/PipelineStages";
 import { JobsProgress } from "@/components/JobsProgress";
 import { ErrorState, LoadingState } from "@/components/States";
 import { useToast } from "@/components/Toast";
-import { IN_PROGRESS_STATUSES, type Asset, type Character, type Scene, type Script, type Thumbnail, type Video, type YoutubeAccount } from "@/types";
+import {
+  IN_PROGRESS_STATUSES,
+  type Asset,
+  type Character,
+  type PublishingJob,
+  type Scene,
+  type Script,
+  type Thumbnail,
+  type Video,
+  type VideoStats,
+  type YoutubeAccount,
+} from "@/types";
 
 type Tab = "script" | "scenes" | "characters" | "assets" | "video" | "publish";
 
@@ -50,7 +61,7 @@ export default function ProjectWorkspace() {
   if (isLoading) return <LoadingState label="Loading project..." />;
   if (isError || !workspace) return <ErrorState message="Couldn't load this project." onRetry={() => refetch()} />;
 
-  const { project, scripts, scenes, characters, assets, jobs, videos, thumbnails } = workspace;
+  const { project, scripts, scenes, characters, assets, jobs, videos, thumbnails, publishingJobs } = workspace;
   const activeScript = scripts.find((s) => s.isActive) ?? scripts[0];
   const finalVideo = videos.find((v) => v.status === "READY");
 
@@ -161,7 +172,15 @@ export default function ProjectWorkspace() {
       {tab === "characters" && <CharactersTab characters={characters} />}
       {tab === "assets" && <AssetsTab assets={assets} />}
       {tab === "video" && <VideoTab projectId={project.id} video={finalVideo} thumbnails={thumbnails} />}
-      {tab === "publish" && <PublishTab projectId={project.id} projectStatus={project.status} defaultTitle={project.title} defaultDescription={project.concept} />}
+      {tab === "publish" && (
+        <PublishTab
+          projectId={project.id}
+          projectStatus={project.status}
+          defaultTitle={project.title}
+          defaultDescription={project.concept}
+          publishingJobs={publishingJobs}
+        />
+      )}
     </div>
   );
 }
@@ -402,16 +421,25 @@ function PublishTab({
   projectStatus,
   defaultTitle,
   defaultDescription,
+  publishingJobs,
 }: {
   projectId: string;
   projectStatus: string;
   defaultTitle: string;
   defaultDescription: string;
+  publishingJobs: PublishingJob[];
 }) {
   const { showToast } = useToast();
+  const completedJob = publishingJobs.find((j) => j.status === "COMPLETED" && j.youtubeVideoId);
   const { data: accounts } = useQuery({
     queryKey: ["youtube-accounts"],
     queryFn: async () => (await api.get<YoutubeAccount[]>("/youtube/accounts")).data,
+  });
+  const statsQuery = useQuery({
+    queryKey: ["youtube-stats", completedJob?.id],
+    queryFn: async () => (await api.get<VideoStats>(`/youtube/publishing-jobs/${completedJob!.id}/stats`)).data,
+    enabled: Boolean(completedJob),
+    refetchOnWindowFocus: false,
   });
 
   const [title, setTitle] = useState(defaultTitle);
@@ -448,71 +476,119 @@ function PublishTab({
   }
 
   return (
-    <div className="card max-w-2xl space-y-4 p-6">
-      {!canPublish && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          {projectStatus === "PUBLISHING"
-            ? "Publishing is already in progress for this project."
-            : 'The project must reach "Ready for review" before it can be published.'}
-        </p>
-      )}
-
-      {!accounts?.length && (
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          No YouTube account connected yet. Connect one from <span className="font-medium">Settings</span> first.
-        </p>
-      )}
-
-      {Boolean(accounts?.length) && (
-        <>
-          <div>
-            <label className="label">YouTube channel</label>
-            <select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">Select a channel...</option>
-              {accounts!.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.channelTitle ?? a.channelId ?? a.id}
-                </option>
-              ))}
-            </select>
+    <div className="space-y-4">
+      {completedJob && (
+        <div className="card max-w-2xl space-y-3 p-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Published to YouTube</h3>
+            <button
+              type="button"
+              className="btn-secondary px-3 py-1 text-xs"
+              onClick={() => statsQuery.refetch()}
+              disabled={statsQuery.isFetching}
+            >
+              {statsQuery.isFetching ? "Refreshing..." : "Refresh stats"}
+            </button>
           </div>
-          <div>
-            <label className="label">Title</label>
-            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} />
-          </div>
-          <div>
-            <label className="label">Description</label>
-            <textarea className="input" rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Tags (comma-separated)</label>
-            <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Visibility</label>
-            <select className="input" value={visibility} onChange={(e) => setVisibility(e.target.value as typeof visibility)}>
-              <option value="PRIVATE">Private</option>
-              <option value="UNLISTED">Unlisted</option>
-              <option value="PUBLIC">Public</option>
-            </select>
-          </div>
-
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
-            <span>
-              I've reviewed the video, title, description, tags, and thumbnail, and I want to publish this to YouTube now.
-            </span>
-          </label>
-
-          <button
-            className="btn-primary w-full"
-            disabled={!canPublish || !confirmed || !accountId || publishing}
-            onClick={handlePublish}
+          <a
+            href={`https://www.youtube.com/watch?v=${completedJob.youtubeVideoId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm text-brand-600 hover:underline dark:text-brand-400"
           >
-            {publishing ? "Publishing..." : "Publish to YouTube"}
-          </button>
-        </>
+            Watch on YouTube ↗
+          </a>
+          {statsQuery.isLoading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading stats...</p>}
+          {statsQuery.isError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{getErrorMessage(statsQuery.error)}</p>
+          )}
+          {statsQuery.data && (
+            <div className="grid grid-cols-3 gap-4 pt-1">
+              <VideoStat label="Views" value={statsQuery.data.viewCount} />
+              <VideoStat label="Likes" value={statsQuery.data.likeCount} />
+              <VideoStat label="Comments" value={statsQuery.data.commentCount} />
+            </div>
+          )}
+        </div>
       )}
+
+      <div className="card max-w-2xl space-y-4 p-6">
+        {!canPublish && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            {projectStatus === "PUBLISHING"
+              ? "Publishing is already in progress for this project."
+              : projectStatus === "PUBLISHED"
+                ? "This project has already been published."
+                : 'The project must reach "Ready for review" before it can be published.'}
+          </p>
+        )}
+
+        {!accounts?.length && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            No YouTube account connected yet. Connect one from <span className="font-medium">Settings</span> first.
+          </p>
+        )}
+
+        {Boolean(accounts?.length) && (
+          <>
+            <div>
+              <label className="label">YouTube channel</label>
+              <select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                <option value="">Select a channel...</option>
+                {accounts!.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.channelTitle ?? a.channelId ?? a.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Title</label>
+              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} />
+            </div>
+            <div>
+              <label className="label">Description</label>
+              <textarea className="input" rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Tags (comma-separated)</label>
+              <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Visibility</label>
+              <select className="input" value={visibility} onChange={(e) => setVisibility(e.target.value as typeof visibility)}>
+                <option value="PRIVATE">Private</option>
+                <option value="UNLISTED">Unlisted</option>
+                <option value="PUBLIC">Public</option>
+              </select>
+            </div>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
+              <span>
+                I've reviewed the video, title, description, tags, and thumbnail, and I want to publish this to YouTube now.
+              </span>
+            </label>
+
+            <button
+              className="btn-primary w-full"
+              disabled={!canPublish || !confirmed || !accountId || publishing}
+              onClick={handlePublish}
+            >
+              {publishing ? "Publishing..." : "Publish to YouTube"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VideoStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{value.toLocaleString()}</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
     </div>
   );
 }

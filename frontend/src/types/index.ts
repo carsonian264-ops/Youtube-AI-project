@@ -133,6 +133,24 @@ export interface Thumbnail {
   isSelected: boolean;
 }
 
+export interface PublishingJob {
+  id: string;
+  projectId: string;
+  youtubeAccountId: string;
+  title: string;
+  visibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
+  status: "PENDING" | "AWAITING_CONFIRMATION" | "UPLOADING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  youtubeVideoId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface VideoStats {
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+}
+
 export interface ProjectWorkspace {
   project: Project;
   scripts: Script[];
@@ -142,6 +160,7 @@ export interface ProjectWorkspace {
   jobs: JobSummary[];
   videos: Video[];
   thumbnails: Thumbnail[];
+  publishingJobs: PublishingJob[];
 }
 
 export interface YoutubeAccount {

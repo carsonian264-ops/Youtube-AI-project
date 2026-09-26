@@ -1,7 +1,14 @@
 import { createReadStream } from "node:fs";
 import { google } from "googleapis";
 import { ProviderError } from "@/utils/errors";
-import type { PublishingProvider, PublishResult, PublishVideoInput, PublishVisibility } from "./PublishingProvider";
+import type {
+  GetVideoStatsInput,
+  PublishingProvider,
+  PublishResult,
+  PublishVideoInput,
+  PublishVisibility,
+  VideoStats,
+} from "./PublishingProvider";
 
 const VISIBILITY_MAP: Record<PublishVisibility, string> = {
   PRIVATE: "private",
@@ -65,6 +72,28 @@ export class YouTubeProvider implements PublishingProvider {
       }
 
       return { externalVideoId: videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
+    } catch (err) {
+      if (err instanceof ProviderError) throw err;
+      const message = err instanceof Error ? err.message : "Unknown YouTube API error";
+      throw new ProviderError("youtube", message, true);
+    }
+  }
+
+  async getStats(input: GetVideoStatsInput): Promise<VideoStats> {
+    const youtube = this.buildClient(input.accessToken, input.refreshToken);
+
+    try {
+      const res = await youtube.videos.list({ part: ["statistics"], id: [input.externalVideoId] });
+      const stats = res.data.items?.[0]?.statistics;
+      if (!stats) {
+        throw new ProviderError("youtube", "YouTube did not return statistics for this video", false);
+      }
+
+      return {
+        viewCount: Number(stats.viewCount ?? 0),
+        likeCount: Number(stats.likeCount ?? 0),
+        commentCount: Number(stats.commentCount ?? 0),
+      };
     } catch (err) {
       if (err instanceof ProviderError) throw err;
       const message = err instanceof Error ? err.message : "Unknown YouTube API error";
