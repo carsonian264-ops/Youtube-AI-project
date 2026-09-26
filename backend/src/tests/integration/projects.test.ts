@@ -146,4 +146,63 @@ describe("Projects API", () => {
       expect(second.status).toBe(409);
     });
   });
+
+  describe("POST /api/projects/:id/thumbnails/:thumbnailId/select", () => {
+    async function createProjectWithThumbnails(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+
+      const [first, second, third] = await Promise.all([
+        prisma.thumbnail.create({ data: { projectId, storageKey: "a", isSelected: true } }),
+        prisma.thumbnail.create({ data: { projectId, storageKey: "b", isSelected: false } }),
+        prisma.thumbnail.create({ data: { projectId, storageKey: "c", isSelected: false } }),
+      ]);
+      return { projectId, first, second, third };
+    }
+
+    it("selects exactly one thumbnail, deselecting the others", async () => {
+      const { token } = await registerUser("thumbs@example.com");
+      const { projectId, second } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/${second.id}/select`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(204);
+
+      const thumbnails = await prisma.thumbnail.findMany({ where: { projectId }, orderBy: { storageKey: "asc" } });
+      expect(thumbnails.map((t) => ({ key: t.storageKey, selected: t.isSelected }))).toEqual([
+        { key: "a", selected: false },
+        { key: "b", selected: true },
+        { key: "c", selected: false },
+      ]);
+    });
+
+    it("404s for a thumbnail that belongs to a different project", async () => {
+      const { token } = await registerUser("thumbs2@example.com");
+      const { projectId: projectA } = await createProjectWithThumbnails(token);
+      const { third: thumbFromB } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectA}/thumbnails/${thumbFromB.id}/select`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("403s when a different user tries to select a thumbnail on someone else's project", async () => {
+      const userA = await registerUser("thumbs-owner@example.com");
+      const userB = await registerUser("thumbs-other@example.com");
+      const { projectId, second } = await createProjectWithThumbnails(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/${second.id}/select`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.thumbnail.findUniqueOrThrow({ where: { id: second.id } });
+      expect(unchanged.isSelected).toBe(false);
+    });
+  });
 });

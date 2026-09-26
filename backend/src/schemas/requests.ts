@@ -33,6 +33,11 @@ export const IdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const ThumbnailSelectParamSchema = z.object({
+  id: z.string().uuid(),
+  thumbnailId: z.string().uuid(),
+});
+
 export const GenerateProjectSchema = z.object({
   targetDurationSeconds: z.number().int().positive().max(3600).optional(),
   tone: z.string().max(200).optional(),

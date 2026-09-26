@@ -151,3 +151,8 @@ export async function cancelProject(req: Request, res: Response): Promise<void> 
   await cancelPendingJobsForProject(project.id);
   res.status(200).json(updated);
 }
+
+export async function selectThumbnail(req: Request, res: Response): Promise<void> {
+  await projectService.selectThumbnail(req.user!.id, requiredParam(req, "id"), requiredParam(req, "thumbnailId"));
+  res.status(204).send();
+}

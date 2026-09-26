@@ -10,6 +10,7 @@ import {
   regenerateScript,
   renderProject,
   runQualityCheck,
+  selectThumbnail,
   updateProject,
 } from "@/controllers/project.controller";
 import { publishToYoutube } from "@/controllers/youtube.controller";
@@ -21,6 +22,7 @@ import {
   IdParamSchema,
   RegenerateScriptSchema,
   RenderProjectSchema,
+  ThumbnailSelectParamSchema,
   UpdateProjectSchema,
   YoutubePublishSchema,
 } from "@/schemas/requests";
@@ -57,6 +59,11 @@ projectsRouter.post(
   asyncHandler(renderProject),
 );
 projectsRouter.post("/:id/quality-check", validate(IdParamSchema, "params"), asyncHandler(runQualityCheck));
+projectsRouter.post(
+  "/:id/thumbnails/:thumbnailId/select",
+  validate(ThumbnailSelectParamSchema, "params"),
+  asyncHandler(selectThumbnail),
+);
 projectsRouter.post(
   "/:id/youtube/publish",
   validate(IdParamSchema, "params"),

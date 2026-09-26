@@ -111,6 +111,19 @@ export class ProjectService {
     return result.count === 1;
   }
 
+  async selectThumbnail(userId: string, projectId: string, thumbnailId: string): Promise<void> {
+    await this.getOwned(userId, projectId);
+    const thumbnail = await prisma.thumbnail.findUnique({ where: { id: thumbnailId } });
+    if (!thumbnail || thumbnail.projectId !== projectId) {
+      throw new NotFoundError("Thumbnail");
+    }
+
+    await prisma.$transaction([
+      prisma.thumbnail.updateMany({ where: { projectId }, data: { isSelected: false } }),
+      prisma.thumbnail.update({ where: { id: thumbnailId }, data: { isSelected: true } }),
+    ]);
+  }
+
   async getFullWorkspace(userId: string, projectId: string) {
     const project = await this.getOwned(userId, projectId);
     const [scripts, scenes, characters, assets, jobs, videos, thumbnails] = await Promise.all([

@@ -125,3 +125,13 @@ export function useGenerateSceneVoice(projectId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
   });
 }
+
+export function useSelectThumbnail(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (thumbnailId: string) => {
+      await api.post(`/projects/${projectId}/thumbnails/${thumbnailId}/select`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}

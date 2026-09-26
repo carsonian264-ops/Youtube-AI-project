@@ -12,6 +12,7 @@ import {
   useRegenerateScript,
   useRenderProject,
   useRunQualityCheck,
+  useSelectThumbnail,
 } from "@/hooks/useProjects";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PipelineStages } from "@/components/PipelineStages";
@@ -52,7 +53,6 @@ export default function ProjectWorkspace() {
   const { project, scripts, scenes, characters, assets, jobs, videos, thumbnails } = workspace;
   const activeScript = scripts.find((s) => s.isActive) ?? scripts[0];
   const finalVideo = videos.find((v) => v.status === "READY");
-  const selectedThumbnail = thumbnails.find((t) => t.isSelected) ?? thumbnails[0];
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -160,7 +160,7 @@ export default function ProjectWorkspace() {
       {tab === "scenes" && <ScenesTab projectId={project.id} scenes={scenes} assets={assets} />}
       {tab === "characters" && <CharactersTab characters={characters} />}
       {tab === "assets" && <AssetsTab assets={assets} />}
-      {tab === "video" && <VideoTab video={finalVideo} thumbnail={selectedThumbnail} />}
+      {tab === "video" && <VideoTab projectId={project.id} video={finalVideo} thumbnails={thumbnails} />}
       {tab === "publish" && <PublishTab projectId={project.id} projectStatus={project.status} defaultTitle={project.title} defaultDescription={project.concept} />}
     </div>
   );
@@ -326,23 +326,71 @@ function AssetsTab({ assets }: { assets: Asset[] }) {
   );
 }
 
-function VideoTab({ video, thumbnail }: { video: Video | undefined; thumbnail: Thumbnail | undefined }) {
+function VideoTab({ projectId, video, thumbnails }: { projectId: string; video: Video | undefined; thumbnails: Thumbnail[] }) {
+  const { showToast } = useToast();
+  const selectThumbnail = useSelectThumbnail(projectId);
+  const selectedThumbnail = thumbnails.find((t) => t.isSelected) ?? thumbnails[0];
+
+  async function handleSelect(thumbnailId: string) {
+    if (thumbnailId === selectedThumbnail?.id) return;
+    try {
+      await selectThumbnail.mutateAsync(thumbnailId);
+    } catch (err) {
+      showToast(getErrorMessage(err), "error");
+    }
+  }
+
   return (
     <div className="grid gap-6 sm:grid-cols-2">
       <div className="card p-5">
         <h4 className="mb-3 text-sm font-semibold">Final video</h4>
         {video?.url ? (
-          <video controls src={video.url} poster={thumbnail?.url ?? undefined} className="w-full rounded-lg bg-black" />
+          <video
+            controls
+            src={video.url}
+            poster={selectedThumbnail?.url ?? undefined}
+            className="w-full rounded-lg bg-black"
+          />
         ) : (
           <p className="text-sm text-slate-500 dark:text-slate-400">Not rendered yet.</p>
         )}
       </div>
       <div className="card p-5">
         <h4 className="mb-3 text-sm font-semibold">Thumbnail</h4>
-        {thumbnail?.url ? (
-          <img src={thumbnail.url} alt="Thumbnail" className="w-full rounded-lg" />
-        ) : (
+        {thumbnails.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">Not generated yet.</p>
+        ) : (
+          <>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+              {thumbnails.length > 1 ? "Pick which thumbnail to use." : "Generated thumbnail."}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {thumbnails.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleSelect(t.id)}
+                  disabled={selectThumbnail.isPending}
+                  className={`relative overflow-hidden rounded-lg border-2 transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    t.isSelected
+                      ? "border-brand-600 ring-2 ring-brand-600/40"
+                      : "border-transparent hover:border-slate-300 dark:hover:border-slate-600"
+                  }`}
+                >
+                  {t.url ? (
+                    <img src={t.url} alt="Thumbnail option" className="aspect-video w-full object-cover" />
+                  ) : (
+                    <div className="aspect-video w-full bg-slate-100 dark:bg-slate-800" />
+                  )}
+                  {t.isSelected && (
+                    <span className="absolute right-1 top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      Selected
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
