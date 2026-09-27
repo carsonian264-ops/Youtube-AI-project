@@ -1,3 +1,6 @@
+import type { CameraMotionType } from "./cameraMotion";
+import type { TransitionType } from "./transitionType";
+
 export type RenderAspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
 
 export interface RenderSceneInput {
@@ -9,6 +12,10 @@ export interface RenderSceneInput {
   durationSeconds: number;
   /** Local filesystem paths to short sound-effect accents, mixed in at the start of the scene. */
   soundEffectPaths?: string[];
+  /** Ken Burns-style motion applied to the still image; defaults to STATIC (unchanged pre-existing behavior). */
+  cameraMotion?: CameraMotionType;
+  /** Transition used leaving this scene for the next one (or, on the last scene, leaving the video). Defaults to CROSSFADE. */
+  transitionOut?: TransitionType;
 }
 
 export interface RenderProjectInput {

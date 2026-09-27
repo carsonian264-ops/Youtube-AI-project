@@ -13,6 +13,8 @@ import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
 import { createMusicProvider, createSoundEffectProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
 import { isSoundEffectName, type SoundEffectName } from "@/services/soundeffect/SoundEffectProvider";
+import { parseCameraMotion } from "@/services/video/cameraMotion";
+import { parseTransition } from "@/services/video/transitionType";
 import { usageService } from "@/services/usage/UsageService";
 import { NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
@@ -49,7 +51,7 @@ export function startVideoRenderingWorker(): Worker {
         const sfxTempDirs: string[] = [];
 
         const sceneInputs = [];
-        for (const scene of scenes) {
+        for (const [sceneIndex, scene] of scenes.entries()) {
           const [image, audio] = await Promise.all([
             assetService.latestReadyForScene(scene.id, "IMAGE"),
             assetService.latestReadyForScene(scene.id, "AUDIO"),
@@ -74,7 +76,14 @@ export function startVideoRenderingWorker(): Worker {
             soundEffectPaths.push(sfxPath);
           }
 
-          sceneInputs.push({ visualPath, audioPath, durationSeconds: scene.durationSeconds, soundEffectPaths });
+          sceneInputs.push({
+            visualPath,
+            audioPath,
+            durationSeconds: scene.durationSeconds,
+            soundEffectPaths,
+            cameraMotion: parseCameraMotion(scene.cameraDirection, sceneIndex),
+            transitionOut: parseTransition(scene.transition),
+          });
         }
         await jobService.updateProgress(jobId, 40);
 

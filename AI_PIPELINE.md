@@ -47,6 +47,20 @@ After a script is generated, a second Claude call extracts every recurring chara
 
 A single scene can also be regenerated independently (`POST /api/scenes/:id/regenerate`, `/visual`, `/voice`) without touching the rest of the project.
 
+## Video rendering (camera motion, transitions, audio mixing)
+
+`FFmpegRenderer` (`backend/src/services/video/FFmpegRenderer.ts`) turns per-scene stills + narration into a single cinematically-edited video, rather than a slideshow of static images joined by hard cuts. Three pieces work together:
+
+**Camera motion** (`services/video/cameraMotion.ts`) — every still image gets a subtle Ken Burns-style zoom/pan (`ZOOM_IN`, `ZOOM_OUT`, `PAN_LEFT/RIGHT/UP/DOWN`, `DIAGONAL`, or `STATIC`) via FFmpeg's `zoompan` filter, driven by `Scene.cameraDirection` (free-form text the AI already writes, e.g. "slow push-in" — `parseCameraMotion` keyword-matches it; unrecognized/empty text falls back to a deterministic per-scene rotation rather than always defaulting to static, so a provider that doesn't vary its wording still produces visually varied output). No new schema field or AI prompt change was needed — `cameraDirection` already existed and was simply unused by the renderer before this.
+
+**Transitions** (`services/video/transitionType.ts`) — scenes are joined with `xfade`/`acrossfade` (crossfade, dip-to-black, dip-to-white, or a very-short hard cut) instead of the old concat-demuxer hard cut, driven by `Scene.transition` (also pre-existing free text, e.g. "fade-to-black", default "cut"). The last scene's transition is treated as an *outro* fade at the very end of the video rather than a scene-to-scene boundary. `concatWithTransitions` chains `xfade` calls across all clips, tracking each transition's cumulative timeline offset since every crossfade shortens the running total.
+
+**Audio mixing** — narration is mixed with background music (when `Project.musicMood != NONE`) using sidechain compression (`sidechaincompress`) so the music audibly ducks under narration and recovers in the gaps, rather than sitting at one flat reduced volume the whole time. The mix is finished with `loudnorm` for consistent output loudness; when there's no music, narration alone still gets a `loudnorm` pass so every video has predictable volume.
+
+Two FFmpeg specifics that took real testing (not just reading the docs) to get right, in case they need touching again:
+- `zoompan`'s self-referencing `zoom`/`x`/`y` expressions only advance frame-to-frame when the looped image input has an explicit `-framerate` flag — without it, every output frame is identical (verified by diffing frame hashes, not by eye).
+- An `xfade`/`acrossfade` duration near zero (tried 0.001s for the hard-cut case) silently breaks the filter's internal frame accounting and truncates the rest of the chained output by several seconds. 0.05s is short enough to read as a cut but avoids the bug.
+
 ## Cost/usage tracking
 
 Every Claude call, image generation, voice generation, render, and YouTube upload writes a `UsageRecord` (`services/usage/UsageService.ts`) — token counts for Claude come directly from the Anthropic API response's `usage` field. This is deliberately just a ledger; no billing logic exists yet (see spec section 23).

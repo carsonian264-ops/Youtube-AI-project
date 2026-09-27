@@ -13,6 +13,22 @@ import type { CharacterBible, ProjectPlan, QualityCheck, Scene, YoutubeMetadata 
  * so the rest of the pipeline (persistence, queues, rendering) can be
  * built and tested without spending real API credits.
  */
+// Cycled by scene index for the "middle" beats. A single hardcoded
+// direction (this used to be "static wide" for every one of them) means
+// every non-hook/CTA scene renders identically static -- fixed here
+// rather than in the renderer, since the renderer's own fallback
+// rotation (see cameraMotion.ts) only ever kicks in for *unrecognized*
+// text, and "static wide" parses as a perfectly valid, deliberate STATIC
+// shot rather than a placeholder that should be overridden.
+const MIDDLE_CAMERA_DIRECTIONS = [
+  "slow pan right across the scene",
+  "slow pull-back",
+  "slow pan left",
+  "gentle push-in",
+  "slow diagonal drift",
+  "slow tilt up",
+];
+
 export class MockAIContentProvider implements AIContentProvider {
   async generateProjectPlan(input: GenerateProjectPlanInput): Promise<ProjectPlan> {
     const targetDuration = input.targetDurationSeconds ?? 180;
@@ -35,10 +51,12 @@ export class MockAIContentProvider implements AIContentProvider {
         visualPrompt: `Minimalist editorial illustration, scene ${sceneNumber}, subject: ${input.idea}, ${
           input.tone ?? "confident"
         } mood, flat color palette, no text overlay`,
-        cameraDirection: isFirst ? "slow push-in" : "static wide",
+        cameraDirection: isFirst ? "slow push-in" : (MIDDLE_CAMERA_DIRECTIONS[i % MIDDLE_CAMERA_DIRECTIONS.length] ?? "static wide"),
         durationSeconds: perScene,
         soundEffects: isFirst ? ["whoosh-in"] : [],
-        transition: isLast ? "fade-to-black" : "cut",
+        // A hard cut every third beat for rhythm; crossfade otherwise so
+        // scenes don't all blend together in one continuous dissolve.
+        transition: isLast ? "fade-to-black" : sceneNumber % 3 === 0 ? "cut" : "crossfade",
       };
     });
 
