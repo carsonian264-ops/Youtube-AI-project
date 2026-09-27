@@ -20,9 +20,9 @@ interface Payload {
 // the user pick beats forcing them to accept (or manually regenerate)
 // whichever one the model happened to produce first.
 const STYLE_VARIANTS = [
-  "clean composition, primary subject centered, bold readable focal point",
-  "dynamic close-up angle, dramatic lighting, high emotional impact",
-  "wide establishing shot, bright saturated colors, curiosity-driven composition",
+  "extreme close-up on the main subject's exaggerated shocked or excited facial expression, blurred dramatic background",
+  "two or more subjects reacting dramatically toward each other, cinematic lighting, high emotional tension",
+  "dynamic action pose with a bold graphic accent (arrow, circle, or glow) drawing the eye to the key detail",
 ];
 
 export function startThumbnailGenerationWorker(): Worker {
@@ -38,7 +38,14 @@ export function startThumbnailGenerationWorker(): Worker {
         const storage = createStorageProvider();
         const existingCount = await prisma.thumbnail.count({ where: { projectId } });
 
-        const basePrompt = `Bold, high-contrast YouTube thumbnail for a video titled "${project.title}" about: ${project.concept}. Eye-catching but not misleading, minimal text.`;
+        // Aims at the viral-clickbait movie-poster look (think Nollywood
+        // thumbnails): exaggerated reactions, oversaturated contrast, and
+        // large bold title text baked into the image -- not a plain,
+        // minimal-text product shot. Diffusion models still render text
+        // imperfectly, so this is a best-effort ask, not a guarantee; the
+        // composition/mood improvement holds even when the lettering itself
+        // comes out rough.
+        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video titled "${project.title}" about: ${project.concept}. Photorealistic, oversaturated high-contrast colors, professional movie-poster composition. Bake the bold title text "${project.title}" into the image as large, thick, outlined block lettering (like a Nollywood or MrBeast-style thumbnail) -- eye-catching and attention-grabbing, but not misleading.`;
         const thumbnailKeys: string[] = [];
 
         for (const [index, styleVariant] of STYLE_VARIANTS.entries()) {
