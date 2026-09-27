@@ -66,7 +66,15 @@ export async function addTitleOverlay(
     const approxCharWidth = 0.62;
     const charCount = Math.max(cleanTitle.length, 1);
     const fontsizeExpr = `min(h*0.20\\,w*0.9/(${charCount}*${approxCharWidth}))`;
-    const filter = [
+    // A dark scrim across the bottom band gives the title a clean, high-
+    // contrast stage no matter what the AI drew there -- including its own
+    // stray text, which "no text in the image" prompting doesn't always
+    // suppress (diffusion models trained on real thumbnails have a strong
+    // prior toward drawing lettering). Without this, the title text and
+    // the model's own attempt at title text can end up visibly stacked on
+    // top of each other.
+    const scrim = "drawbox=x=0:y=ih*0.72:w=iw:h=ih*0.28:color=black@0.5:t=fill";
+    const drawtext = [
       `drawtext=fontfile='${escapeFilterPath(FONT_PATH)}'`,
       `textfile='${escapeFilterPath(titlePath)}'`,
       "fontcolor=yellow",
@@ -76,6 +84,7 @@ export async function addTitleOverlay(
       "x=(w-text_w)/2",
       "y=h-(text_h*2.0)",
     ].join(":");
+    const filter = `${scrim},${drawtext}`;
 
     await runFfmpeg(["-y", "-i", inputPath, "-vf", filter, "-update", "1", "-frames:v", "1", outputPath]);
     const data = await fs.readFile(outputPath);

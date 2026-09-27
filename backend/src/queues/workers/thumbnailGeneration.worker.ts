@@ -49,13 +49,24 @@ export function startThumbnailGenerationWorker(): Worker {
         // "render this text" dominates the whole composition. Title text is
         // composited on afterward instead (see addTitleOverlay below),
         // which also guarantees it's actually legible.
-        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video about: ${project.concept}. Photorealistic photo, oversaturated high-contrast colors, professional movie-poster composition, no text or lettering in the image.`;
+        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video about: ${project.concept}. Photorealistic photo, oversaturated high-contrast colors, professional movie-poster composition, absolutely no text, words, letters, or lettering anywhere in the image.`;
+        // Diffusion models trained on real thumbnails have a strong prior
+        // toward drawing text even when the prompt says not to -- a plain
+        // "no text" instruction is sometimes ignored outright. Pairing it
+        // with an explicit negative prompt (still just prompt text under
+        // the hood for Pollinations, but a second, differently-phrased
+        // signal) cuts down how often that happens. It's the AI drawing
+        // its own text, layered under addTitleOverlay's guaranteed title,
+        // that caused the doubled/overlapping lettering this was meant to
+        // avoid in the first place.
+        const negativePrompt = "text, words, letters, titles, captions, subtitles, watermark, logo, title card, typography";
         const thumbnailKeys: string[] = [];
 
         for (const [index, styleVariant] of STYLE_VARIANTS.entries()) {
           const media = await visualProvider.generateImage({
             prompt: `${basePrompt} Style: ${styleVariant}.`,
             aspectRatio: "LANDSCAPE_16_9",
+            negativePrompt,
           });
           const overlaid = await addTitleOverlay(media.data, media.mimeType, project.title);
 
