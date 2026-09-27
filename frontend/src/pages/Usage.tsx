@@ -19,13 +19,14 @@ export default function Usage() {
     queryFn: async () => (await api.get<UsageSummaryRow[]>("/usage")).data,
   });
 
+  const max = Math.max(1, ...(data ?? []).map((r) => r.total));
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Usage</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          What your account has consumed across AI, media generation, and rendering. This is the foundation for
-          future billing -- no charges are applied today.
+        <h1 className="font-display text-2xl font-bold text-ink-primary">Usage</h1>
+        <p className="text-sm text-ink-secondary">
+          What your account has consumed across AI, media generation, and rendering. This is the foundation for future billing — no charges are applied today.
         </p>
       </div>
 
@@ -37,11 +38,16 @@ export default function Usage() {
       )}
 
       {!isLoading && !isError && data && data.length > 0 && (
-        <div className="card divide-y divide-slate-200 dark:divide-slate-800">
+        <div className="card space-y-5 p-6">
           {data.map((row) => (
-            <div key={row.type} className="flex items-center justify-between px-5 py-3 text-sm">
-              <span className="text-slate-600 dark:text-slate-300">{UNIT_LABELS[row.type] ?? row.type}</span>
-              <span className="font-medium">{Math.round(row.total * 100) / 100}</span>
+            <div key={row.type}>
+              <div className="mb-1.5 flex items-center justify-between text-sm">
+                <span className="text-ink-secondary">{UNIT_LABELS[row.type] ?? row.type}</span>
+                <span className="font-medium text-ink-primary">{Math.round(row.total * 100) / 100}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+                <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style={{ width: `${Math.max(4, (row.total / max) * 100)}%` }} />
+              </div>
             </div>
           ))}
         </div>

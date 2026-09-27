@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/lib/authStore";
 import { useToast } from "@/components/Toast";
+import { Logo } from "@/components/Logo";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -32,10 +33,15 @@ export default function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 to-white px-4 dark:from-slate-950 dark:to-slate-900">
-      <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-1 text-xl font-semibold">Create your account</h1>
-        <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Start producing AI-assisted video content</p>
+    <div className="relative flex min-h-screen items-center justify-center bg-base px-4">
+      <div className="pointer-events-none absolute inset-0 bg-aurora" />
+      <div className="card relative w-full max-w-sm p-8">
+        <div className="mb-6 flex items-center gap-2.5">
+          <Logo size={30} />
+          <span className="font-display text-base font-bold text-ink-primary">AI Content Studio</span>
+        </div>
+        <h1 className="mb-1 text-xl font-semibold text-ink-primary">Create your account</h1>
+        <p className="mb-6 text-sm text-ink-secondary">Start producing AI-assisted video content</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -72,17 +78,17 @@ export default function Register() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
             />
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">At least 8 characters.</p>
+            <p className="mt-1 text-xs text-ink-muted">At least 8 characters.</p>
           </div>
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && <p className="text-sm text-status-failed">{error}</p>}
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-6 text-center text-sm text-ink-secondary">
           Already have an account?{" "}
-          <Link to="/login" className="font-medium text-brand-600 hover:underline dark:text-brand-400">
+          <Link to="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
             Sign in
           </Link>
         </p>

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { IN_PROGRESS_STATUSES, type AspectRatio, type MusicMood, type Project, type ProjectWorkspace } from "@/types";
+import { IN_PROGRESS_STATUSES, type AspectRatio, type MusicMood, type Project, type ProjectListItem, type ProjectWorkspace } from "@/types";
 
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: async () => (await api.get<Project[]>("/projects")).data,
+    queryFn: async () => (await api.get<ProjectListItem[]>("/projects")).data,
     // Mirrors useProject()'s self-polling below: while any project in the
     // list is actively generating, the dashboard and projects list stay
     // live on their own -- previously only the single-project workspace

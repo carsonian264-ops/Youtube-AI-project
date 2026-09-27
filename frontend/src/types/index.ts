@@ -52,6 +52,13 @@ export interface Project {
   updatedAt: string;
 }
 
+/** Shape returned by GET /projects (the list endpoint) -- includes just
+ * enough of the selected thumbnail/final video to render a real card. */
+export interface ProjectListItem extends Project {
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+}
+
 export interface Scene {
   id: string;
   projectId: string;
@@ -122,6 +129,7 @@ export interface Video {
   projectId: string;
   url: string | null;
   durationSeconds: number | null;
+  aspectRatio: AspectRatio;
   status: string;
   createdAt: string;
 }

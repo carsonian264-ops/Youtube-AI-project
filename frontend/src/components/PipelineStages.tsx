@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { Check } from "lucide-react";
 import type { ProjectStatus } from "@/types";
 
 const STAGES: { key: string; label: string; statuses: ProjectStatus[] }[] = [
@@ -26,11 +27,11 @@ function stageState(stageIndex: number, currentIndex: number, status: ProjectSta
   return "waiting";
 }
 
-export function PipelineStages({ status }: { status: ProjectStatus }) {
+export function PipelineStages({ status, compact = false }: { status: ProjectStatus; compact?: boolean }) {
   const currentIndex = STAGES.findIndex((s) => s.statuses.includes(status));
 
   return (
-    <div className="card overflow-x-auto p-5">
+    <div className={compact ? "" : "card overflow-x-auto p-5"}>
       <ol className="flex min-w-max items-center gap-1">
         {STAGES.map((stage, index) => {
           const state = stageState(index, currentIndex, status);
@@ -39,26 +40,24 @@ export function PipelineStages({ status }: { status: ProjectStatus }) {
               <div className="flex flex-col items-center gap-1.5">
                 <div
                   className={clsx(
-                    "flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-semibold",
-                    state === "done" && "border-emerald-500 bg-emerald-500 text-white",
-                    state === "active" && "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300",
-                    state === "waiting" && "border-slate-300 text-slate-400 dark:border-slate-700",
-                    state === "failed" && "border-red-500 bg-red-500 text-white",
+                    "flex items-center justify-center rounded-full border text-xs font-semibold transition-colors",
+                    compact ? "h-5 w-5" : "h-8 w-8",
+                    state === "done" && "border-status-ready bg-status-ready/15 text-status-ready",
+                    state === "active" && "border-indigo-400 bg-indigo-500/15 text-indigo-300 shadow-[0_0_0_3px_rgba(91,110,245,0.15)]",
+                    state === "waiting" && "border-border text-ink-muted",
+                    state === "failed" && "border-status-failed bg-status-failed/15 text-status-failed",
                   )}
                 >
-                  {state === "done" ? "✓" : index + 1}
+                  {state === "done" ? <Check size={compact ? 11 : 14} strokeWidth={3} /> : index + 1}
                 </div>
-                <span
-                  className={clsx(
-                    "text-xs font-medium",
-                    state === "active" ? "text-brand-700 dark:text-brand-300" : "text-slate-500 dark:text-slate-400",
-                  )}
-                >
-                  {stage.label}
-                </span>
+                {!compact && (
+                  <span className={clsx("text-xs font-medium", state === "active" ? "text-ink-primary" : "text-ink-muted")}>{stage.label}</span>
+                )}
               </div>
               {index < STAGES.length - 1 && (
-                <div className={clsx("mx-2 h-0.5 w-8", index < currentIndex ? "bg-emerald-500" : "bg-slate-200 dark:bg-slate-700")} />
+                <div
+                  className={clsx(compact ? "mx-1 h-px w-4" : "mx-2 h-px w-8", index < currentIndex ? "bg-status-ready/50" : "bg-border")}
+                />
               )}
             </li>
           );

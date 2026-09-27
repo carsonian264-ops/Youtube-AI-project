@@ -46,8 +46,26 @@ export class ProjectService {
     });
   }
 
-  async list(userId: string): Promise<Project[]> {
-    return prisma.project.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
+  /**
+   * Includes just enough from each project's thumbnail/video to render a
+   * real card (thumbnail image, duration) without the list view falling
+   * back to placeholder art or the caller waterfalling a full workspace
+   * fetch per project.
+   */
+  async list(userId: string): Promise<Array<Project & { thumbnailUrl: string | null; durationSeconds: number | null }>> {
+    const projects = await prisma.project.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        thumbnails: { where: { isSelected: true }, take: 1 },
+        videos: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    return projects.map(({ thumbnails, videos, ...project }) => ({
+      ...project,
+      thumbnailUrl: thumbnails[0]?.url ?? null,
+      durationSeconds: videos[0]?.durationSeconds ?? null,
+    }));
   }
 
   async getOwned(userId: string, projectId: string): Promise<Project> {

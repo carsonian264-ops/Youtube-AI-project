@@ -1,14 +1,15 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { Sparkles } from "lucide-react";
 import { useCreateProject } from "@/hooks/useProjects";
 import { useToast } from "@/components/Toast";
 import { getErrorMessage } from "@/lib/api";
 import type { AspectRatio, MusicMood } from "@/types";
 
-const ASPECT_RATIOS: { value: AspectRatio; label: string }[] = [
-  { value: "LANDSCAPE_16_9", label: "16:9 (YouTube standard)" },
-  { value: "PORTRAIT_9_16", label: "9:16 (Shorts / Reels)" },
-  { value: "SQUARE_1_1", label: "1:1 (Square)" },
+const ASPECT_RATIOS: { value: AspectRatio; label: string; hint: string }[] = [
+  { value: "LANDSCAPE_16_9", label: "16:9", hint: "YouTube standard" },
+  { value: "PORTRAIT_9_16", label: "9:16", hint: "Shorts / Reels" },
+  { value: "SQUARE_1_1", label: "1:1", hint: "Square" },
 ];
 
 const MUSIC_MOODS: { value: MusicMood; label: string }[] = [
@@ -18,6 +19,12 @@ const MUSIC_MOODS: { value: MusicMood; label: string }[] = [
   { value: "CINEMATIC", label: "Cinematic" },
   { value: "DRAMATIC", label: "Dramatic" },
 ];
+
+function optionClasses(active: boolean) {
+  return `rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+    active ? "border-indigo-400/60 bg-indigo-500/12 text-indigo-200" : "border-border text-ink-secondary hover:border-border-strong hover:text-ink-primary"
+  }`;
+}
 
 export default function CreateProject() {
   const navigate = useNavigate();
@@ -58,34 +65,28 @@ export default function CreateProject() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">New project</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Describe the video you want. Studio will plan the script, scenes, visuals, voice, and captions for you --
-          you stay in control of every step and nothing publishes without your explicit confirmation.
+    <div className="mx-auto max-w-2xl">
+      <div className="mb-8 text-center">
+        <h1 className="font-display text-[28px] font-bold text-ink-primary">What's your next video?</h1>
+        <p className="mx-auto mt-2 max-w-md text-[15px] text-ink-secondary">
+          Give AI your idea. We'll help turn it into a complete production — script, scenes, visuals, voice, and captions.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="card space-y-5 p-6">
-        <div>
-          <label className="label" htmlFor="idea">
-            Video idea
-          </label>
-          <textarea
-            id="idea"
-            required
-            rows={4}
-            className="input"
-            placeholder='e.g. "Create a 5-minute YouTube video explaining how artificial intelligence will change software development."'
-            value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-          />
-        </div>
+      <form onSubmit={handleSubmit} className="card space-y-6 p-6 md:p-7">
+        <textarea
+          id="idea"
+          required
+          rows={4}
+          className="w-full resize-none rounded-xl border border-border bg-surface-raised px-4 py-3.5 text-[15px] leading-relaxed text-ink-primary placeholder:text-ink-muted focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          placeholder="Describe the video you want to create... e.g. a 5-minute explainer on how artificial intelligence will change software development"
+          value={idea}
+          onChange={(e) => setIdea(e.target.value)}
+        />
 
         <div>
           <label className="label" htmlFor="title">
-            Title (optional -- Studio will draft one if left blank)
+            Title <span className="text-ink-muted">(optional — we'll draft one if left blank)</span>
           </label>
           <input id="title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
@@ -117,17 +118,9 @@ export default function CreateProject() {
           <span className="label">Aspect ratio</span>
           <div className="grid grid-cols-3 gap-2">
             {ASPECT_RATIOS.map((option) => (
-              <button
-                type="button"
-                key={option.value}
-                onClick={() => setAspectRatio(option.value)}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                  aspectRatio === option.value
-                    ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
-                    : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-                }`}
-              >
-                {option.label}
+              <button type="button" key={option.value} onClick={() => setAspectRatio(option.value)} className={optionClasses(aspectRatio === option.value)}>
+                <div>{option.label}</div>
+                <div className="mt-0.5 text-[11px] font-normal text-ink-muted">{option.hint}</div>
               </button>
             ))}
           </div>
@@ -137,30 +130,22 @@ export default function CreateProject() {
           <span className="label">Background music</span>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             {MUSIC_MOODS.map((option) => (
-              <button
-                type="button"
-                key={option.value}
-                onClick={() => setMusicMood(option.value)}
-                className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                  musicMood === option.value
-                    ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300"
-                    : "border-slate-300 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-                }`}
-              >
+              <button type="button" key={option.value} onClick={() => setMusicMood(option.value)} className={optionClasses(musicMood === option.value)}>
                 {option.label}
               </button>
             ))}
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-status-failed">{error}</p>}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 border-t border-border pt-5">
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={createProject.isPending}>
-            {createProject.isPending ? "Creating..." : "Create project"}
+          <button type="submit" className="btn-primary px-5" disabled={createProject.isPending}>
+            <Sparkles size={16} />
+            {createProject.isPending ? "Starting production..." : "Generate production"}
           </button>
         </div>
       </form>

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, getErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/lib/authStore";
 import { useToast } from "@/components/Toast";
+import { Logo } from "@/components/Logo";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -33,25 +34,22 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 to-white px-4 dark:from-slate-950 dark:to-slate-900">
-      <div className="card w-full max-w-sm p-8">
-        <h1 className="mb-1 text-xl font-semibold">Welcome back</h1>
-        <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">Sign in to your Studio account</p>
+    <div className="relative flex min-h-screen items-center justify-center bg-base px-4">
+      <div className="pointer-events-none absolute inset-0 bg-aurora" />
+      <div className="card relative w-full max-w-sm p-8">
+        <div className="mb-6 flex items-center gap-2.5">
+          <Logo size={30} />
+          <span className="font-display text-base font-bold text-ink-primary">AI Content Studio</span>
+        </div>
+        <h1 className="mb-1 text-xl font-semibold text-ink-primary">Welcome back</h1>
+        <p className="mb-6 text-sm text-ink-secondary">Sign in to your Studio account</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label" htmlFor="email">
               Email
             </label>
-            <input
-              id="email"
-              type="email"
-              required
-              className="input"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
+            <input id="email" type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
           </div>
           <div>
             <label className="label" htmlFor="password">
@@ -67,15 +65,15 @@ export default function Login() {
               autoComplete="current-password"
             />
           </div>
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && <p className="text-sm text-status-failed">{error}</p>}
           <button type="submit" className="btn-primary w-full" disabled={loading}>
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-6 text-center text-sm text-ink-secondary">
           No account?{" "}
-          <Link to="/register" className="font-medium text-brand-600 hover:underline dark:text-brand-400">
+          <Link to="/register" className="font-medium text-indigo-400 hover:text-indigo-300">
             Create one
           </Link>
         </p>
