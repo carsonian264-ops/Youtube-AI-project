@@ -1,10 +1,18 @@
 import { Link } from "react-router-dom";
-import { Plus, Film, ArrowUpRight } from "lucide-react";
+import { Plus, Film, ArrowUpRight, Layers, Activity, CheckCircle2, Rocket } from "lucide-react";
 import { useProjects } from "@/hooks/useProjects";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ProjectCard } from "@/components/ProjectCard";
 import { EmptyState, ErrorState, SkeletonCard } from "@/components/States";
 import { useAuthStore } from "@/lib/authStore";
+import { IN_PROGRESS_STATUSES } from "@/types";
+
+const STAT_ICON_STYLES = {
+  indigo: "bg-indigo-500/10 text-indigo-400",
+  progress: "bg-status-progress/10 text-status-progress",
+  ready: "bg-status-ready/10 text-status-ready",
+  published: "bg-status-published/10 text-status-published",
+} as const;
 
 export default function Dashboard() {
   const user = useAuthStore((s) => s.user);
@@ -16,10 +24,27 @@ export default function Dashboard() {
 
   const counts = {
     total: projects?.length ?? 0,
-    inProgress: projects?.filter((p) => !["DRAFT", "READY_FOR_REVIEW", "PUBLISHED", "FAILED", "CANCELLED"].includes(p.status)).length ?? 0,
+    draft: projects?.filter((p) => p.status === "DRAFT").length ?? 0,
+    inProgress: projects?.filter((p) => IN_PROGRESS_STATUSES.includes(p.status)).length ?? 0,
     readyForReview: projects?.filter((p) => p.status === "READY_FOR_REVIEW").length ?? 0,
     published: projects?.filter((p) => p.status === "PUBLISHED").length ?? 0,
+    failed: projects?.filter((p) => p.status === "FAILED" || p.status === "CANCELLED").length ?? 0,
   };
+
+  const stats = [
+    { label: "Total projects", value: counts.total, icon: Layers, color: "indigo" as const },
+    { label: "In progress", value: counts.inProgress, icon: Activity, color: "progress" as const },
+    { label: "Ready for review", value: counts.readyForReview, icon: CheckCircle2, color: "ready" as const },
+    { label: "Published", value: counts.published, icon: Rocket, color: "published" as const },
+  ];
+
+  const pipeline = [
+    { label: "Draft", count: counts.draft, className: "bg-ink-muted" },
+    { label: "In progress", count: counts.inProgress, className: "bg-status-progress" },
+    { label: "Ready for review", count: counts.readyForReview, className: "bg-status-ready" },
+    { label: "Published", count: counts.published, className: "bg-status-published" },
+    { label: "Failed", count: counts.failed, className: "bg-status-failed" },
+  ].filter((s) => s.count > 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-10">
@@ -86,18 +111,48 @@ export default function Dashboard() {
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {[
-          { label: "Total projects", value: counts.total },
-          { label: "In progress", value: counts.inProgress },
-          { label: "Ready for review", value: counts.readyForReview },
-          { label: "Published", value: counts.published },
-        ].map((stat) => (
-          <div key={stat.label} className="card p-4">
-            <p className="font-display text-2xl font-bold text-ink-primary">{stat.value}</p>
-            <p className="mt-0.5 text-xs text-ink-secondary">{stat.label}</p>
+      <section>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {stats.map((stat) => (
+            <div key={stat.label} className="card flex items-start gap-3 p-4 transition-colors hover:border-border-strong">
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${STAT_ICON_STYLES[stat.color]}`}>
+                <stat.icon size={17} strokeWidth={2} />
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-2xl font-bold leading-tight text-ink-primary">{stat.value}</p>
+                <p className="mt-0.5 truncate text-xs text-ink-secondary">{stat.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {pipeline.length > 0 && (
+          <div className="card mt-4 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-ink-secondary">Pipeline breakdown</p>
+              <p className="text-xs text-ink-muted">{counts.total} total</p>
+            </div>
+            <div className="mt-3 flex h-2 gap-[2px] overflow-hidden rounded-full bg-surface-raised">
+              {pipeline.map((seg) => (
+                <div
+                  key={seg.label}
+                  title={`${seg.label}: ${seg.count}`}
+                  className={`h-full ${seg.className}`}
+                  style={{ width: `${(seg.count / counts.total) * 100}%` }}
+                />
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+              {pipeline.map((seg) => (
+                <div key={seg.label} className="flex items-center gap-1.5 text-xs text-ink-secondary">
+                  <span className={`h-1.5 w-1.5 rounded-full ${seg.className}`} />
+                  {seg.label}
+                  <span className="text-ink-muted">{seg.count}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+        )}
       </section>
 
       {/* Recent projects */}
