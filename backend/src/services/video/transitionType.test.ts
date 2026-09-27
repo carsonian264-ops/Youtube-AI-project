@@ -1,4 +1,4 @@
-import { parseTransition, XFADE_CONFIG } from "./transitionType";
+import { parseTransition, scaledXfadeDuration, XFADE_CONFIG } from "./transitionType";
 
 describe("parseTransition", () => {
   it.each([
@@ -20,6 +20,26 @@ describe("parseTransition", () => {
 
   it("is case-insensitive", () => {
     expect(parseTransition("HARD CUT")).toBe("HARD_CUT");
+  });
+
+  it.each([null, undefined, "", "some unrecognized text"])("uses a custom fallback for unrecognized/empty %p when given one", (text) => {
+    expect(parseTransition(text, "HARD_CUT")).toBe("HARD_CUT");
+  });
+
+  it("still honors an explicit recognizable transition over the custom fallback", () => {
+    expect(parseTransition("fade to black", "HARD_CUT")).toBe("FADE_BLACK");
+  });
+});
+
+describe("scaledXfadeDuration", () => {
+  it("scales CROSSFADE/FADE_BLACK/FADE_WHITE proportionally", () => {
+    expect(scaledXfadeDuration("CROSSFADE", 2)).toBeCloseTo(1.0);
+    expect(scaledXfadeDuration("CROSSFADE", 0.5)).toBeCloseTo(0.25);
+  });
+
+  it("never scales HARD_CUT, to avoid reintroducing the near-zero xfade truncation bug", () => {
+    expect(scaledXfadeDuration("HARD_CUT", 0.1)).toBe(XFADE_CONFIG.HARD_CUT.durationSeconds);
+    expect(scaledXfadeDuration("HARD_CUT", 5)).toBe(XFADE_CONFIG.HARD_CUT.durationSeconds);
   });
 });
 

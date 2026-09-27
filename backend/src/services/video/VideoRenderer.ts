@@ -22,9 +22,11 @@ export interface RenderProjectInput {
   scenes: RenderSceneInput[];
   /** Local filesystem path to background music, mixed under narration at reduced volume. */
   musicPath?: string;
-  /** Local filesystem path to a burned-in SRT caption file. */
-  captionsSrtPath?: string;
+  /** Local filesystem path to a burned-in caption file (ASS, carrying its own per-style look -- see captionStyles.ts). */
+  captionsPath?: string;
   aspectRatio: RenderAspectRatio;
+  /** Multiplies every scene-to-scene transition's duration; see videoStyle.ts. Defaults to 1 (unchanged pacing). */
+  transitionDurationScale?: number;
   /** Where to write the final MP4. */
   outputPath: string;
 }

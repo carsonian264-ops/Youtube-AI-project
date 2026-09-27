@@ -33,8 +33,13 @@ export const XFADE_CONFIG: Record<TransitionType, { xfadeName: string; durationS
  * text doesn't silently fall back to the same hard cuts this feature
  * exists to move away from. An explicit "cut" is still honored literally
  * -- this only affects the unrecognized/empty case.
+ *
+ * `fallback` lets a project's video style (see videoStyle.ts) pick a
+ * different default than plain CROSSFADE for unrecognized/empty text --
+ * e.g. NEWS and SHORT_FORM style projects default to HARD_CUT for a
+ * punchier pace instead of every unstyled scene reading as CINEMATIC.
  */
-export function parseTransition(transition: string | null | undefined): TransitionType {
+export function parseTransition(transition: string | null | undefined, fallback: TransitionType = "CROSSFADE"): TransitionType {
   const text = (transition ?? "").toLowerCase();
 
   if (/\bcut\b/.test(text)) return "HARD_CUT";
@@ -42,5 +47,17 @@ export function parseTransition(transition: string | null | undefined): Transiti
   if (/white\b/.test(text)) return "FADE_WHITE";
   if (/fade|crossfade|dissolve/.test(text)) return "CROSSFADE";
 
-  return "CROSSFADE";
+  return fallback;
+}
+
+/**
+ * Scales a transition's xfade duration for a video style's pacing (e.g.
+ * CINEMATIC lingers longer on its dissolves, SHORT_FORM snaps through them
+ * quickly). HARD_CUT is deliberately never scaled: its 0.05s duration is
+ * already the minimum that avoids the xfade near-zero-duration truncation
+ * bug documented above, and scaling it down further would reintroduce it.
+ */
+export function scaledXfadeDuration(transition: TransitionType, scale: number): number {
+  if (transition === "HARD_CUT") return XFADE_CONFIG.HARD_CUT.durationSeconds;
+  return XFADE_CONFIG[transition].durationSeconds * scale;
 }

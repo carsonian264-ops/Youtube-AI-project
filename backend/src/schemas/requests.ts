@@ -13,6 +13,18 @@ export const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
+const VIDEO_STYLE_VALUES = [
+  "DOCUMENTARY",
+  "CINEMATIC",
+  "EDUCATIONAL",
+  "TECH",
+  "MOTIVATIONAL",
+  "STORYTELLING",
+  "NEWS",
+  "FACELESS_YOUTUBE",
+  "SHORT_FORM",
+] as const;
+
 export const CreateProjectSchema = z.object({
   title: z.string().min(1).max(200),
   concept: z.string().min(1).max(2000),
@@ -21,6 +33,7 @@ export const CreateProjectSchema = z.object({
   estimatedDurationSeconds: z.number().int().positive().max(3600).optional(),
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
   musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
+  videoStyle: z.enum(VIDEO_STYLE_VALUES).optional(),
 });
 
 export const UpdateProjectSchema = z.object({
@@ -29,6 +42,7 @@ export const UpdateProjectSchema = z.object({
   tone: z.string().max(200).optional(),
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
   musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
+  videoStyle: z.enum(VIDEO_STYLE_VALUES).optional(),
 });
 
 export const IdParamSchema = z.object({

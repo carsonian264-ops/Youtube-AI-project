@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { IN_PROGRESS_STATUSES, type AspectRatio, type MusicMood, type Project, type ProjectListItem, type ProjectWorkspace } from "@/types";
+import { IN_PROGRESS_STATUSES, type AspectRatio, type MusicMood, type Project, type ProjectListItem, type ProjectWorkspace, type VideoStyle } from "@/types";
 
 export function useProjects() {
   return useQuery({
@@ -43,6 +43,7 @@ export interface CreateProjectInput {
   estimatedDurationSeconds?: number;
   aspectRatio?: AspectRatio;
   musicMood?: MusicMood;
+  videoStyle?: VideoStyle;
 }
 
 export function useCreateProject() {

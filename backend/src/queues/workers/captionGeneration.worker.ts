@@ -9,6 +9,8 @@ import { jobService } from "@/services/job/JobService";
 import { projectService } from "@/services/project/ProjectService";
 import { createStorageProvider } from "@/services/providers";
 import { captionService } from "@/services/caption/CaptionService";
+import { VIDEO_STYLE_CONFIG } from "@/services/video/videoStyle";
+import { RESOLUTION } from "@/services/video/resolution";
 import { logger } from "@/utils/logger";
 
 interface Payload {
@@ -25,15 +27,20 @@ export function startCaptionGenerationWorker(): Worker {
       await jobService.markActive(jobId);
 
       try {
-        const scenes = await prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } });
-        const srt = captionService.buildSrt(scenes);
+        const [project, scenes] = await Promise.all([
+          prisma.project.findUniqueOrThrow({ where: { id: projectId } }),
+          prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } }),
+        ]);
+        const { width, height } = RESOLUTION[project.aspectRatio];
+        const captionStyle = VIDEO_STYLE_CONFIG[project.videoStyle].captionStyle;
+        const ass = captionService.buildAss(scenes, captionStyle, width, height);
 
         const storage = createStorageProvider();
-        const key = `projects/${projectId}/captions/${randomUUID()}.srt`;
-        const uploaded = await storage.upload({ key, data: Buffer.from(srt, "utf-8"), contentType: "text/plain" });
+        const key = `projects/${projectId}/captions/${randomUUID()}.ass`;
+        const uploaded = await storage.upload({ key, data: Buffer.from(ass, "utf-8"), contentType: "text/plain" });
 
         await prisma.caption.create({
-          data: { projectId, format: "SRT", storageKey: uploaded.key, url: uploaded.url },
+          data: { projectId, format: "ASS", storageKey: uploaded.key, url: uploaded.url },
         });
 
         await jobService.markCompleted(jobId, { captionKey: uploaded.key });

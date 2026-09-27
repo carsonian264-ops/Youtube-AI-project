@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import { useCreateProject } from "@/hooks/useProjects";
 import { useToast } from "@/components/Toast";
 import { getErrorMessage } from "@/lib/api";
-import type { AspectRatio, MusicMood } from "@/types";
+import type { AspectRatio, MusicMood, VideoStyle } from "@/types";
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string; hint: string }[] = [
   { value: "LANDSCAPE_16_9", label: "16:9", hint: "YouTube standard" },
@@ -18,6 +18,18 @@ const MUSIC_MOODS: { value: MusicMood; label: string }[] = [
   { value: "CALM", label: "Calm" },
   { value: "CINEMATIC", label: "Cinematic" },
   { value: "DRAMATIC", label: "Dramatic" },
+];
+
+const VIDEO_STYLES: { value: VideoStyle; label: string; hint: string }[] = [
+  { value: "CINEMATIC", label: "Cinematic", hint: "Dramatic fades, elegant captions" },
+  { value: "DOCUMENTARY", label: "Documentary", hint: "Slow, deliberate pacing" },
+  { value: "EDUCATIONAL", label: "Educational", hint: "Clear, classic captions" },
+  { value: "TECH", label: "Tech", hint: "Minimal, clean captions" },
+  { value: "MOTIVATIONAL", label: "Motivational", hint: "Bold, punchy captions" },
+  { value: "STORYTELLING", label: "Storytelling", hint: "Creator-style highlight captions" },
+  { value: "NEWS", label: "News", hint: "Hard cuts, lower-third captions" },
+  { value: "FACELESS_YOUTUBE", label: "Faceless YouTube", hint: "Word-by-word highlight captions" },
+  { value: "SHORT_FORM", label: "Short-form", hint: "Fast cuts, punchy highlight captions" },
 ];
 
 function optionClasses(active: boolean) {
@@ -37,6 +49,7 @@ export default function CreateProject() {
   const [durationMinutes, setDurationMinutes] = useState(3);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("LANDSCAPE_16_9");
   const [musicMood, setMusicMood] = useState<MusicMood>("NONE");
+  const [videoStyle, setVideoStyle] = useState<VideoStyle>("CINEMATIC");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -56,6 +69,7 @@ export default function CreateProject() {
         estimatedDurationSeconds: Math.round(durationMinutes * 60),
         aspectRatio,
         musicMood,
+        videoStyle,
       });
       showToast("Project created", "success");
       navigate(`/projects/${project.id}`);
@@ -119,6 +133,18 @@ export default function CreateProject() {
           <div className="grid grid-cols-3 gap-2">
             {ASPECT_RATIOS.map((option) => (
               <button type="button" key={option.value} onClick={() => setAspectRatio(option.value)} className={optionClasses(aspectRatio === option.value)}>
+                <div>{option.label}</div>
+                <div className="mt-0.5 text-[11px] font-normal text-ink-muted">{option.hint}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="label">Video style</span>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {VIDEO_STYLES.map((option) => (
+              <button type="button" key={option.value} onClick={() => setVideoStyle(option.value)} className={optionClasses(videoStyle === option.value)}>
                 <div>{option.label}</div>
                 <div className="mt-0.5 text-[11px] font-normal text-ink-muted">{option.hint}</div>
               </button>

@@ -5,6 +5,7 @@ import path from "node:path";
 import { env } from "@/config/env";
 import { runFfmpeg } from "@/utils/ffmpegExec";
 import { probeDurationSeconds } from "@/utils/mediaProbe";
+import { captionService } from "@/services/caption/CaptionService";
 import { FFmpegRenderer } from "./FFmpegRenderer";
 import type { RenderProjectInput } from "./VideoRenderer";
 
@@ -137,4 +138,52 @@ describe("FFmpegRenderer (real ffmpeg)", () => {
     expect(finalDuration).toBeLessThan(4.5);
     expect(result.durationSeconds).toBeGreaterThan(3.5);
   }, 20_000);
+
+  it("burns a real ASS caption file (animated karaoke style) into the output without failing", async () => {
+    const img = await makeTestImage(workDir, "magenta");
+    const audio = await makeTestAudio(workDir, "narration", 300, 3);
+    const outputPath = path.join(workDir, "with-captions.mp4");
+
+    const ass = captionService.buildAss([{ sceneNumber: 1, narration: "Hello from a real karaoke caption test", durationSeconds: 3 }], "HIGHLIGHT", 640, 360);
+    const captionsPath = path.join(workDir, "captions.ass");
+    await fs.writeFile(captionsPath, ass, "utf-8");
+
+    const result = await renderer.render({
+      aspectRatio: "SQUARE_1_1",
+      outputPath,
+      captionsPath,
+      scenes: [{ visualPath: img, audioPath: audio, durationSeconds: 3, cameraMotion: "STATIC" }],
+    });
+
+    await fs.access(outputPath);
+    const streams = await probeStreams(outputPath);
+    expect(streams.hasVideo).toBe(true);
+    expect(streams.hasAudio).toBe(true);
+    expect(result.durationSeconds).toBeGreaterThan(2.8);
+  }, 20_000);
+
+  it("scales transition duration with transitionDurationScale (a bigger scale eats more of the total runtime)", async () => {
+    const [imgA, imgB] = await Promise.all([makeTestImage(workDir, "red"), makeTestImage(workDir, "green")]);
+    const [audioA, audioB] = await Promise.all([makeTestAudio(workDir, "a", 300, 3), makeTestAudio(workDir, "b", 500, 3)]);
+
+    const baseInput: Omit<RenderProjectInput, "transitionDurationScale" | "outputPath"> = {
+      aspectRatio: "LANDSCAPE_16_9",
+      scenes: [
+        { visualPath: imgA, audioPath: audioA, durationSeconds: 3, cameraMotion: "STATIC", transitionOut: "CROSSFADE" },
+        { visualPath: imgB, audioPath: audioB, durationSeconds: 3, cameraMotion: "STATIC" },
+      ],
+    };
+
+    const fastOutput = path.join(workDir, "fast.mp4");
+    const slowOutput = path.join(workDir, "slow.mp4");
+    const [fastResult, slowResult] = await Promise.all([
+      renderer.render({ ...baseInput, transitionDurationScale: 0.5, outputPath: fastOutput }),
+      renderer.render({ ...baseInput, transitionDurationScale: 3, outputPath: slowOutput }),
+    ]);
+
+    // Naive sum is 6s either way; a longer crossfade overlap shortens the
+    // merged output more, so the 3x-scaled transition must produce a
+    // measurably shorter final video than the 0.5x-scaled one.
+    expect(slowResult.durationSeconds).toBeLessThan(fastResult.durationSeconds);
+  }, 30_000);
 });

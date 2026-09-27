@@ -35,6 +35,17 @@ describe("parseCameraMotion", () => {
     const motions = new Set(Array.from({ length: 7 }, (_, i) => parseCameraMotion("", i)));
     expect(motions.size).toBeGreaterThan(1);
   });
+
+  it("cycles through a custom rotation array when given one (video-style bias)", () => {
+    const rotation = ["STATIC", "PAN_RIGHT"] as const;
+    expect(parseCameraMotion("", 0, [...rotation])).toBe("STATIC");
+    expect(parseCameraMotion("", 1, [...rotation])).toBe("PAN_RIGHT");
+    expect(parseCameraMotion("", 2, [...rotation])).toBe("STATIC");
+  });
+
+  it("recognizable keyword direction still wins over a custom rotation", () => {
+    expect(parseCameraMotion("slow push-in", 0, ["STATIC"])).toBe("ZOOM_IN");
+  });
 });
 
 describe("buildZoompanFilter", () => {

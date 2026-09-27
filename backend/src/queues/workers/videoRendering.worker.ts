@@ -15,6 +15,7 @@ import { createMusicProvider, createSoundEffectProvider, createStorageProvider, 
 import { isSoundEffectName, type SoundEffectName } from "@/services/soundeffect/SoundEffectProvider";
 import { parseCameraMotion } from "@/services/video/cameraMotion";
 import { parseTransition } from "@/services/video/transitionType";
+import { VIDEO_STYLE_CONFIG } from "@/services/video/videoStyle";
 import { usageService } from "@/services/usage/UsageService";
 import { NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
@@ -49,6 +50,7 @@ export function startVideoRenderingWorker(): Worker {
 
         const soundEffectProvider = createSoundEffectProvider();
         const sfxTempDirs: string[] = [];
+        const styleConfig = VIDEO_STYLE_CONFIG[project.videoStyle];
 
         const sceneInputs = [];
         for (const [sceneIndex, scene] of scenes.entries()) {
@@ -81,13 +83,13 @@ export function startVideoRenderingWorker(): Worker {
             audioPath,
             durationSeconds: scene.durationSeconds,
             soundEffectPaths,
-            cameraMotion: parseCameraMotion(scene.cameraDirection, sceneIndex),
-            transitionOut: parseTransition(scene.transition),
+            cameraMotion: parseCameraMotion(scene.cameraDirection, sceneIndex, styleConfig.cameraMotionRotation),
+            transitionOut: parseTransition(scene.transition, styleConfig.defaultTransition),
           });
         }
         await jobService.updateProgress(jobId, 40);
 
-        const captionsSrtPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
+        const captionsPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
 
         const musicPath =
           project.musicMood === "NONE" ? undefined : await createMusicProvider().getTrack(project.musicMood);
@@ -98,8 +100,9 @@ export function startVideoRenderingWorker(): Worker {
           const result = await renderer.render({
             scenes: sceneInputs,
             musicPath,
-            captionsSrtPath,
+            captionsPath,
             aspectRatio: project.aspectRatio,
+            transitionDurationScale: styleConfig.transitionDurationScale,
             outputPath: tmpOutput,
           });
           await jobService.updateProgress(jobId, 80);

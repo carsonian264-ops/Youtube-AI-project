@@ -4,14 +4,9 @@ import path from "node:path";
 import { runFfmpeg } from "@/utils/ffmpegExec";
 import { probeDurationSeconds } from "@/utils/mediaProbe";
 import { buildZoompanFilter } from "./cameraMotion";
-import { XFADE_CONFIG, type TransitionType } from "./transitionType";
-import type { RenderAspectRatio, RenderProjectInput, RenderResult, VideoRenderer } from "./VideoRenderer";
-
-const RESOLUTION: Record<RenderAspectRatio, { width: number; height: number }> = {
-  LANDSCAPE_16_9: { width: 1920, height: 1080 },
-  PORTRAIT_9_16: { width: 1080, height: 1920 },
-  SQUARE_1_1: { width: 1080, height: 1080 },
-};
+import { XFADE_CONFIG, scaledXfadeDuration, type TransitionType } from "./transitionType";
+import { RESOLUTION } from "./resolution";
+import type { RenderProjectInput, RenderResult, VideoRenderer } from "./VideoRenderer";
 
 // Every scene clip is rendered at the same explicit frame rate regardless
 // of whether it uses camera motion. This matters beyond just camera
@@ -53,7 +48,7 @@ export class FFmpegRenderer implements VideoRenderer {
 
       const transitionsOut = input.scenes.map((s) => s.transitionOut ?? "CROSSFADE");
       const concatPath = path.join(workDir, "concat.mp4");
-      await this.concatWithTransitions(clipPaths, transitionsOut, concatPath);
+      await this.concatWithTransitions(clipPaths, transitionsOut, input.transitionDurationScale ?? 1, concatPath);
 
       let currentPath = concatPath;
 
@@ -65,9 +60,9 @@ export class FFmpegRenderer implements VideoRenderer {
       }
       currentPath = audioPath;
 
-      if (input.captionsSrtPath) {
+      if (input.captionsPath) {
         const withCaptionsPath = path.join(workDir, "with-captions.mp4");
-        await this.burnCaptions(currentPath, input.captionsSrtPath, withCaptionsPath);
+        await this.burnCaptions(currentPath, input.captionsPath, withCaptionsPath);
         currentPath = withCaptionsPath;
       }
 
@@ -138,8 +133,16 @@ export class FFmpegRenderer implements VideoRenderer {
    * rather than a cut or crossfade (nothing to crossfade *into* on the
    * last scene), is treated as an outro: a fade at the very tail of the
    * finished video, video and audio together.
+   *
+   * `transitionScale` (from the project's video style, see videoStyle.ts)
+   * multiplies every non-HARD_CUT transition's duration for pacing --
+   * CINEMATIC lingers, SHORT_FORM snaps through. It also scales the outro
+   * fade, floored well above zero since (unlike xfade) a plain `fade`
+   * filter with d=0 is a legal but pointless no-op fade rather than a bug,
+   * so there's no correctness reason to floor it -- the floor here is
+   * purely so an aggressive scale doesn't make the outro imperceptible.
    */
-  private async concatWithTransitions(clipPaths: string[], transitionsOut: TransitionType[], outputPath: string): Promise<void> {
+  private async concatWithTransitions(clipPaths: string[], transitionsOut: TransitionType[], transitionScale: number, outputPath: string): Promise<void> {
     if (clipPaths.length === 1) {
       await fs.copyFile(clipPaths[0]!, outputPath);
       return;
@@ -154,7 +157,9 @@ export class FFmpegRenderer implements VideoRenderer {
     const filterParts: string[] = [];
 
     for (let i = 1; i < clipPaths.length; i++) {
-      const { xfadeName, durationSeconds: xfadeDur } = XFADE_CONFIG[transitionsOut[i - 1]!];
+      const transition = transitionsOut[i - 1]!;
+      const xfadeName = XFADE_CONFIG[transition].xfadeName;
+      const xfadeDur = scaledXfadeDuration(transition, transitionScale);
       const offset = Math.max(0, cumulative - xfadeDur);
       const nextVideoLabel = `v${i}`;
       const nextAudioLabel = `a${i}`;
@@ -168,9 +173,10 @@ export class FFmpegRenderer implements VideoRenderer {
     const lastTransition = transitionsOut[transitionsOut.length - 1]!;
     if (lastTransition === "FADE_BLACK" || lastTransition === "FADE_WHITE") {
       const color = lastTransition === "FADE_BLACK" ? "black" : "white";
-      const fadeStart = Math.max(0, cumulative - OUTRO_FADE_SECONDS);
-      filterParts.push(`[${videoLabel}]fade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}:color=${color}[${videoLabel}o]`);
-      filterParts.push(`[${audioLabel}]afade=t=out:st=${fadeStart.toFixed(3)}:d=${OUTRO_FADE_SECONDS}[${audioLabel}o]`);
+      const outroFadeSeconds = Math.max(0.3, OUTRO_FADE_SECONDS * transitionScale);
+      const fadeStart = Math.max(0, cumulative - outroFadeSeconds);
+      filterParts.push(`[${videoLabel}]fade=t=out:st=${fadeStart.toFixed(3)}:d=${outroFadeSeconds}:color=${color}[${videoLabel}o]`);
+      filterParts.push(`[${audioLabel}]afade=t=out:st=${fadeStart.toFixed(3)}:d=${outroFadeSeconds}[${audioLabel}o]`);
       videoLabel = `${videoLabel}o`;
       audioLabel = `${audioLabel}o`;
     }
@@ -244,10 +250,18 @@ export class FFmpegRenderer implements VideoRenderer {
     await runFfmpeg(["-y", "-i", videoPath, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-c:a", "aac", outputPath]);
   }
 
-  private async burnCaptions(videoPath: string, srtPath: string, outputPath: string): Promise<void> {
+  /**
+   * Caption files are now ASS (see CaptionService.buildAss / captionStyles.ts),
+   * which embeds its own [V4+ Styles] section -- font, size, color,
+   * animation. Deliberately no `force_style` override here: that option
+   * clobbers every style property it names on top of *all* styles in the
+   * file, which would silently flatten every named caption style back to
+   * one hardcoded look, defeating the point of having them.
+   */
+  private async burnCaptions(videoPath: string, captionsPath: string, outputPath: string): Promise<void> {
     // FFmpeg's filtergraph parser treats a bare backslash inside a
     // single-quoted filter argument as an escape character for whatever
-    // follows it -- so a raw Windows path like "C:\Users\...\file.srt"
+    // follows it -- so a raw Windows path like "C:\Users\...\file.ass"
     // gets every backslash silently swallowed by the time it reaches the
     // subtitles filter, leaving an unopenable, mangled path (this is a
     // well-known FFmpeg-on-Windows gotcha, not specific to this codebase).
@@ -255,16 +269,7 @@ export class FFmpegRenderer implements VideoRenderer {
     // itself accepts forward slashes in paths just fine -- and the drive
     // letter's colon still needs its own escape since ':' is the filter
     // option separator.
-    const escaped = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
-    await runFfmpeg([
-      "-y",
-      "-i",
-      videoPath,
-      "-vf",
-      `subtitles='${escaped}':force_style='FontSize=22,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=3'`,
-      "-c:a",
-      "copy",
-      outputPath,
-    ]);
+    const escaped = captionsPath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+    await runFfmpeg(["-y", "-i", videoPath, "-vf", `subtitles='${escaped}'`, "-c:a", "copy", outputPath]);
   }
 }

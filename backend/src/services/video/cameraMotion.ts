@@ -17,8 +17,13 @@ const ROTATION: CameraMotionType[] = ["ZOOM_IN", "PAN_RIGHT", "ZOOM_OUT", "PAN_L
  * non-hook/CTA scene, which would make this whole system invisible for
  * the common case of a totally static direction. An unrecognized or empty
  * direction gets a varied motion instead of silently doing nothing.
+ *
+ * `rotation` lets a project's video style (see videoStyle.ts) bias which
+ * motions that fallback cycles through -- e.g. NEWS leans STATIC-heavy,
+ * SHORT_FORM leans ZOOM_IN-heavy -- without touching the keyword parsing
+ * above, which still wins whenever the AI's own direction is recognizable.
  */
-export function parseCameraMotion(direction: string | null | undefined, sceneIndex: number): CameraMotionType {
+export function parseCameraMotion(direction: string | null | undefined, sceneIndex: number, rotation: CameraMotionType[] = ROTATION): CameraMotionType {
   const text = (direction ?? "").toLowerCase();
 
   if (/\bstatic\b|\bfixed\b|\bstill\b|\bno movement\b|\bwide shot\b/.test(text) && !/\bpush\b|\bpull\b|\bzoom\b|\bpan\b/.test(text)) {
@@ -34,7 +39,8 @@ export function parseCameraMotion(direction: string | null | undefined, sceneInd
   if (/\bzoom\b/.test(text)) return "ZOOM_IN";
   if (/\bpan\b/.test(text)) return "PAN_RIGHT";
 
-  return ROTATION[((sceneIndex % ROTATION.length) + ROTATION.length) % ROTATION.length] ?? "STATIC";
+  const cycle = rotation.length > 0 ? rotation : ROTATION;
+  return cycle[((sceneIndex % cycle.length) + cycle.length) % cycle.length] ?? "STATIC";
 }
 
 /**

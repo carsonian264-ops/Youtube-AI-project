@@ -47,6 +47,21 @@ enum MusicMood {
   DRAMATIC
 }
 
+// Centralized per-style defaults (caption look, camera-motion bias,
+// transition pacing) live in services/video/videoStyle.ts rather than as
+// scattered conditionals -- this enum is just the persisted choice.
+enum VideoStyle {
+  DOCUMENTARY
+  CINEMATIC
+  EDUCATIONAL
+  TECH
+  MOTIVATIONAL
+  STORYTELLING
+  NEWS
+  FACELESS_YOUTUBE
+  SHORT_FORM
+}
+
 enum JobType {
   CONTENT_GENERATION
   VISUAL_GENERATION
@@ -113,6 +128,7 @@ enum UsageType {
 enum CaptionFormat {
   SRT
   VTT
+  ASS
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +159,7 @@ model Project {
   tone                     String?
   estimatedDurationSeconds Int?
   aspectRatio              AspectRatio   @default(LANDSCAPE_16_9)
+  videoStyle               VideoStyle    @default(CINEMATIC)
   musicMood                MusicMood     @default(NONE)
   status                   ProjectStatus @default(DRAFT)
   currentVersion           Int           @default(1)

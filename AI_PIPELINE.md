@@ -39,7 +39,7 @@ After a script is generated, a second Claude call extracts every recurring chara
 | Script + scene breakdown + character bible | `content-generation` | `AIContentProvider.generateProjectPlan`, `.generateCharacterBible` |
 | Per-scene image | `visual-generation` | `VisualGenerationProvider.generateImage` |
 | Per-scene narration | `voice-generation` | `VoiceGenerationProvider.generateSpeech` |
-| Captions (SRT) | `caption-generation` | `CaptionService.buildSrt` (derived from narration + timing, no AI call) |
+| Captions (ASS) | `caption-generation` | `CaptionService.buildAss` (derived from narration + timing, no AI call) |
 | Thumbnail | `thumbnail-generation` | `VisualGenerationProvider.generateImage` |
 | Final video | `video-rendering` | `VideoRenderer.render` (FFmpeg) |
 | Quality check | `quality-check` | `AIContentProvider.runQualityCheck` |
@@ -60,6 +60,35 @@ A single scene can also be regenerated independently (`POST /api/scenes/:id/rege
 Two FFmpeg specifics that took real testing (not just reading the docs) to get right, in case they need touching again:
 - `zoompan`'s self-referencing `zoom`/`x`/`y` expressions only advance frame-to-frame when the looped image input has an explicit `-framerate` flag — without it, every output frame is identical (verified by diffing frame hashes, not by eye).
 - An `xfade`/`acrossfade` duration near zero (tried 0.001s for the hard-cut case) silently breaks the filter's internal frame accounting and truncates the rest of the chained output by several seconds. 0.05s is short enough to read as a cut but avoids the bug.
+
+## Video styles and dynamic captions
+
+`Project.videoStyle` (an enum: `DOCUMENTARY`, `CINEMATIC`, `EDUCATIONAL`, `TECH`, `MOTIVATIONAL`, `STORYTELLING`, `NEWS`, `FACELESS_YOUTUBE`, `SHORT_FORM`, default `CINEMATIC`, chosen at project creation) is a single user-facing choice that drives three previously-separate things through one config object, `VIDEO_STYLE_CONFIG` (`services/video/videoStyle.ts`), instead of scattered per-style conditionals:
+
+- **Caption style** — which of the 6 named caption looks (below) gets burned in.
+- **Camera-motion bias** — which `CameraMotionType`s `parseCameraMotion`'s fallback cycles through when a scene's own `cameraDirection` text isn't recognizable (e.g. `SHORT_FORM` leans on punchy zooms, `NEWS` leans mostly static).
+- **Transition pacing** — `parseTransition`'s fallback (e.g. `NEWS`/`SHORT_FORM` default to a hard cut instead of a crossfade) and `transitionDurationScale`, which multiplies every scene-to-scene `xfade` duration (and the outro fade) so e.g. `CINEMATIC` lingers on its dissolves (1.4x) while `SHORT_FORM` snaps through them (0.6x). `HARD_CUT` is never scaled — its duration is already the minimum that avoids the near-zero xfade truncation bug described above, and scaling it down further would reintroduce it.
+
+A scene's own AI-written `cameraDirection`/`transition` text always wins when recognizable; the style only governs what happens when it isn't (or is empty).
+
+### Caption styles (ASS, not SRT)
+
+Captions are generated as ASS (Advanced SubStation Alpha) rather than SRT (`CaptionService.buildAss`, `services/caption/captionStyles.ts`), because ASS can carry per-style font/color/positioning in its own `[V4+ Styles]` section and express word-level timing — something SRT has no way to do. `FFmpegRenderer.burnCaptions` no longer passes a `force_style` override to the `subtitles` filter, since that option would clobber every style property it names across the whole file, flattening every caption style back to one hardcoded look.
+
+Six named styles (`CaptionStyleName` in `captionStyles.ts`), each mapped to one or more video styles:
+
+| Style | Look | Animated (word-by-word `{\kf}` karaoke) |
+|---|---|---|
+| `CLASSIC` | Plain white, bottom-center — the pre-existing default look | No |
+| `CINEMATIC` | Small italic white, positioned higher | No |
+| `MINIMAL` | Small, semi-transparent box background, no outline | No |
+| `CREATOR` | Bold yellow, bottom-center | Yes |
+| `BOLD` | Huge bold uppercase, dead-center screen | Yes |
+| `HIGHLIGHT` | Bold green karaoke sweep, bottom-center | Yes |
+
+Animated styles get a `{\kf<centiseconds>}` fill-sweep tag per word (ASS's native karaoke effect: text sweeps from the style's `SecondaryColour` to `PrimaryColour`), with each word's duration allocated proportional to its character length within the same per-block duration budget `buildSrt`/`buildAss` both compute from `wrapNarrationIntoBlocks`/`allocateDurations` — the last word in a block absorbs the rounding remainder so the running total always matches the block's actual on-screen time exactly, the same technique `allocateDurations` already used across whole blocks.
+
+`buildSrt` (plain SRT, no per-style config) is unchanged and still available, but the pipeline itself now always generates ASS.
 
 ## Cost/usage tracking
 

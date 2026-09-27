@@ -36,6 +36,17 @@ export type AspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
 
 export type MusicMood = "NONE" | "UPBEAT" | "CALM" | "CINEMATIC" | "DRAMATIC";
 
+export type VideoStyle =
+  | "DOCUMENTARY"
+  | "CINEMATIC"
+  | "EDUCATIONAL"
+  | "TECH"
+  | "MOTIVATIONAL"
+  | "STORYTELLING"
+  | "NEWS"
+  | "FACELESS_YOUTUBE"
+  | "SHORT_FORM";
+
 export interface Project {
   id: string;
   userId: string;
@@ -46,6 +57,7 @@ export interface Project {
   estimatedDurationSeconds: number | null;
   aspectRatio: AspectRatio;
   musicMood: MusicMood;
+  videoStyle: VideoStyle;
   status: ProjectStatus;
   failureReason: string | null;
   createdAt: string;
