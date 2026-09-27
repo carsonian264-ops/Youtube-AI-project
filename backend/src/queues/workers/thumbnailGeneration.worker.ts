@@ -6,6 +6,7 @@ import { redisConnection } from "../connection";
 import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { createStorageProvider, createVisualGenerationProvider } from "@/services/providers";
+import { addTitleOverlay } from "@/services/visual/titleOverlay";
 import { usageService } from "@/services/usage/UsageService";
 import { logger } from "@/utils/logger";
 
@@ -39,13 +40,16 @@ export function startThumbnailGenerationWorker(): Worker {
         const existingCount = await prisma.thumbnail.count({ where: { projectId } });
 
         // Aims at the viral-clickbait movie-poster look (think Nollywood
-        // thumbnails): exaggerated reactions, oversaturated contrast, and
-        // large bold title text baked into the image -- not a plain,
-        // minimal-text product shot. Diffusion models still render text
-        // imperfectly, so this is a best-effort ask, not a guarantee; the
-        // composition/mood improvement holds even when the lettering itself
-        // comes out rough.
-        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video titled "${project.title}" about: ${project.concept}. Photorealistic, oversaturated high-contrast colors, professional movie-poster composition. Bake the bold title text "${project.title}" into the image as large, thick, outlined block lettering (like a Nollywood or MrBeast-style thumbnail) -- eye-catching and attention-grabbing, but not misleading.`;
+        // thumbnails): a real photorealistic scene with exaggerated
+        // reactions and oversaturated contrast. Explicitly asking the
+        // diffusion model to also draw the title as text in-image (an
+        // earlier version of this prompt did) backfired badly: instead of
+        // a photo with lettering on it, models tend to degrade into a flat
+        // title card -- solid color background, no scene at all -- because
+        // "render this text" dominates the whole composition. Title text is
+        // composited on afterward instead (see addTitleOverlay below),
+        // which also guarantees it's actually legible.
+        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video about: ${project.concept}. Photorealistic photo, oversaturated high-contrast colors, professional movie-poster composition, no text or lettering in the image.`;
         const thumbnailKeys: string[] = [];
 
         for (const [index, styleVariant] of STYLE_VARIANTS.entries()) {
@@ -53,9 +57,10 @@ export function startThumbnailGenerationWorker(): Worker {
             prompt: `${basePrompt} Style: ${styleVariant}.`,
             aspectRatio: "LANDSCAPE_16_9",
           });
+          const overlaid = await addTitleOverlay(media.data, media.mimeType, project.title);
 
           const key = `projects/${projectId}/thumbnails/${randomUUID()}.png`;
-          const uploaded = await storage.upload({ key, data: media.data, contentType: media.mimeType });
+          const uploaded = await storage.upload({ key, data: overlaid.data, contentType: overlaid.mimeType });
           thumbnailKeys.push(uploaded.key);
 
           await prisma.thumbnail.create({
