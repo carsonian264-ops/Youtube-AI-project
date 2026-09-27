@@ -27,9 +27,17 @@ describe("ProjectStateMachine", () => {
   });
 
   it("rejects transitioning out of a terminal state", () => {
-    expect(() => ProjectStateMachine.assertTransition("PUBLISHED", "DRAFT")).toThrow();
-    expect(ProjectStateMachine.isTerminal("PUBLISHED")).toBe(true);
+    expect(() => ProjectStateMachine.assertTransition("CANCELLED", "DRAFT")).toThrow();
     expect(ProjectStateMachine.isTerminal("CANCELLED")).toBe(true);
+  });
+
+  it("allows re-rendering a published project, but not skipping straight back to arbitrary earlier states", () => {
+    // PUBLISHED isn't fully terminal: a project can be re-rendered (e.g.
+    // after a renderer upgrade) without touching the YouTube upload
+    // itself, since publishing is a separate, explicit action.
+    expect(() => ProjectStateMachine.assertTransition("PUBLISHED", "RENDERING")).not.toThrow();
+    expect(() => ProjectStateMachine.assertTransition("PUBLISHED", "DRAFT")).toThrow();
+    expect(ProjectStateMachine.isTerminal("PUBLISHED")).toBe(false);
   });
 
   it("allows every non-terminal state to fail", () => {

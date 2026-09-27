@@ -59,7 +59,15 @@ const BASE_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   // user can retry.
   READY_FOR_REVIEW: ["PUBLISHING", "ASSETS_GENERATING", "RENDERING", "CANCELLED"],
   PUBLISHING: ["PUBLISHED", "READY_FOR_REVIEW"],
-  PUBLISHED: [],
+  // Re-rendering a published project (e.g. after a renderer upgrade) only
+  // touches the locally-generated video file -- it never touches the
+  // already-live YouTube upload, since publishing is a separate, explicit
+  // action. Landing back at READY_FOR_REVIEW (via the normal
+  // RENDERING -> QUALITY_CHECK -> READY_FOR_REVIEW path) rather than
+  // straight back to PUBLISHED is deliberate: the two are now out of
+  // sync, and silently relabeling the project "published" again would
+  // hide that the improved render was never actually re-uploaded.
+  PUBLISHED: ["RENDERING"],
   FAILED: ["PLANNING", "CANCELLED"],
   CANCELLED: [],
 };

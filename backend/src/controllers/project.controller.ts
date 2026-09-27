@@ -110,7 +110,12 @@ export async function renderProject(req: Request, res: Response): Promise<void> 
 
   const claimed = await projectService.transitionStatusIfCurrent(
     project.id,
-    ["AUDIO_GENERATING", "QUALITY_CHECK", "READY_FOR_REVIEW"],
+    // PUBLISHED is included so a project can be re-rendered after a
+    // renderer upgrade -- this only replaces the local video file, never
+    // the already-live YouTube upload (a separate, explicit action), and
+    // deliberately lands back at READY_FOR_REVIEW rather than PUBLISHED
+    // once done (see ProjectStateMachine's PUBLISHED entry).
+    ["AUDIO_GENERATING", "QUALITY_CHECK", "READY_FOR_REVIEW", "PUBLISHED"],
     "RENDERING",
   );
   if (!claimed) {

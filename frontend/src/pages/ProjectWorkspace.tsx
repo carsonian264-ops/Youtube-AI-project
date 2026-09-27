@@ -119,11 +119,26 @@ export default function ProjectWorkspace() {
               Regenerate script
             </button>
           )}
-          {/* Only READY_FOR_REVIEW is a legal source for a manual re-render --
-              SCENES_READY has no visual/voice assets yet, so rendering from
-              there would just fail at the FFmpeg stage. */}
-          {project.status === "READY_FOR_REVIEW" && scenes.length > 0 && (
-            <button className="btn-secondary" onClick={() => runAction(() => renderProject.mutateAsync(), "Render started")}>
+          {/* READY_FOR_REVIEW and PUBLISHED are the legal sources for a manual
+              re-render -- SCENES_READY has no visual/voice assets yet, so
+              rendering from there would just fail at the FFmpeg stage.
+              Re-rendering a published project only replaces the local video
+              file; it never touches the already-live YouTube upload, since
+              publishing is a separate, explicit action -- the toast below
+              says so and the project moves back to "Ready for review"
+              afterward rather than staying "Published". */}
+          {(project.status === "READY_FOR_REVIEW" || project.status === "PUBLISHED") && scenes.length > 0 && (
+            <button
+              className="btn-secondary"
+              onClick={() =>
+                runAction(
+                  () => renderProject.mutateAsync(),
+                  project.status === "PUBLISHED"
+                    ? "Re-render started. The video already live on YouTube won't change until you publish again."
+                    : "Render started",
+                )
+              }
+            >
               <RotateCcw size={14} />
               Re-render video
             </button>
