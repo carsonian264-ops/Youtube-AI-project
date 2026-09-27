@@ -39,27 +39,28 @@ export function startThumbnailGenerationWorker(): Worker {
         const storage = createStorageProvider();
         const existingCount = await prisma.thumbnail.count({ where: { projectId } });
 
-        // Aims at the viral-clickbait movie-poster look (think Nollywood
+        // Aims at the viral-clickbait movie-poster *look* (think Nollywood
         // thumbnails): a real photorealistic scene with exaggerated
         // reactions and oversaturated contrast. Explicitly asking the
         // diffusion model to also draw the title as text in-image (an
         // earlier version of this prompt did) backfired badly: instead of
         // a photo with lettering on it, models tend to degrade into a flat
-        // title card -- solid color background, no scene at all -- because
-        // "render this text" dominates the whole composition. Title text is
-        // composited on afterward instead (see addTitleOverlay below),
-        // which also guarantees it's actually legible.
-        const basePrompt = `Viral, high-click-through-rate YouTube thumbnail for a video about: ${project.concept}. Photorealistic photo, oversaturated high-contrast colors, professional movie-poster composition, absolutely no text, words, letters, or lettering anywhere in the image.`;
-        // Diffusion models trained on real thumbnails have a strong prior
-        // toward drawing text even when the prompt says not to -- a plain
-        // "no text" instruction is sometimes ignored outright. Pairing it
-        // with an explicit negative prompt (still just prompt text under
-        // the hood for Pollinations, but a second, differently-phrased
-        // signal) cuts down how often that happens. It's the AI drawing
-        // its own text, layered under addTitleOverlay's guaranteed title,
-        // that caused the doubled/overlapping lettering this was meant to
-        // avoid in the first place.
-        const negativePrompt = "text, words, letters, titles, captions, subtitles, watermark, logo, title card, typography";
+        // title card, or plaster huge lettering across most of the frame,
+        // because "render this text" dominates the whole composition.
+        // Title text is composited on afterward instead (see
+        // addTitleOverlay below), which also guarantees it's legible.
+        //
+        // The words "YouTube thumbnail" and "movie poster" turned out to be
+        // the problem, not just the missing negative prompt: both formats
+        // *virtually always* carry large title text in the training data a
+        // model like this learned from, so naming either format at all
+        // reintroduces the bias that "no text" is trying to cancel out.
+        // Describing it as a photograph instead -- never naming the format
+        // it'll be used as -- avoids invoking that association in the
+        // first place.
+        const basePrompt = `A dramatic, professional photograph for a video about: ${project.concept}. Photorealistic, oversaturated high-contrast colors, cinematic photography. Pure photography only -- not a poster, not a thumbnail graphic, not a book cover, no graphic design elements, no text, words, letters, or lettering anywhere in the image.`;
+        const negativePrompt =
+          "text, words, letters, titles, poster, movie poster, book cover, album cover, captions, subtitles, watermark, logo, title card, typography, graphic design";
         const thumbnailKeys: string[] = [];
 
         for (const [index, styleVariant] of STYLE_VARIANTS.entries()) {

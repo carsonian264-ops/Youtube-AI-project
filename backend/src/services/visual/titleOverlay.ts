@@ -73,7 +73,7 @@ export async function addTitleOverlay(
     // prior toward drawing lettering). Without this, the title text and
     // the model's own attempt at title text can end up visibly stacked on
     // top of each other.
-    const scrim = "drawbox=x=0:y=ih*0.72:w=iw:h=ih*0.28:color=black@0.5:t=fill";
+    const scrim = "drawbox=x=0:y=ih*0.68:w=iw:h=ih*0.32:color=black@0.65:t=fill";
     const drawtext = [
       `drawtext=fontfile='${escapeFilterPath(FONT_PATH)}'`,
       `textfile='${escapeFilterPath(titlePath)}'`,
