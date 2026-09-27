@@ -15,13 +15,15 @@ interface Payload {
   projectId: string;
   pipelineRunId: string;
   sceneId: string;
+  /** See the identical flag in visualGeneration.worker.ts -- same fan-in hazard, same fix. */
+  sceneOnly?: boolean;
 }
 
 export function startVoiceGenerationWorker(): Worker {
   return new Worker<Payload>(
     QUEUE_NAMES.VOICE_GENERATION,
     async (bullJob: BullJob<Payload>) => {
-      const { jobId, projectId, pipelineRunId, sceneId } = bullJob.data;
+      const { jobId, projectId, pipelineRunId, sceneId, sceneOnly } = bullJob.data;
       await jobService.markActive(jobId);
 
       try {
@@ -51,6 +53,8 @@ export function startVoiceGenerationWorker(): Worker {
         }
 
         await jobService.markCompleted(jobId, { sceneId, durationSeconds });
+
+        if (sceneOnly) return;
 
         const counts = await jobService.countByTypeAndStatus(projectId, "VOICE_GENERATION", pipelineRunId);
         if (counts.total > 0 && counts.completed + counts.failed === counts.total) {

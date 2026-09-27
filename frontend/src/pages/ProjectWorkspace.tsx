@@ -24,6 +24,7 @@ import {
   useGenerateSceneVoice,
   useProject,
   useRegenerateScene,
+  useRegenerateSceneVisuals,
   useRegenerateScript,
   useRegenerateThumbnails,
   useRenderProject,
@@ -242,14 +243,44 @@ function ScenesTab({ projectId, scenes, assets }: { projectId: string; scenes: S
   const regenerateScene = useRegenerateScene(projectId);
   const generateVisual = useGenerateSceneVisual(projectId);
   const generateVoice = useGenerateSceneVoice(projectId);
+  const regenerateAllVisuals = useRegenerateSceneVisuals(projectId);
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   if (scenes.length === 0) {
     return <p className="py-8 text-center text-sm text-ink-secondary">No scenes yet — generate a script first.</p>;
   }
 
+  async function handleRegenerateAllVisuals() {
+    try {
+      await regenerateAllVisuals.mutateAsync();
+      showToast("Regenerating every scene's visual — re-render the video afterward to update the final file.", "success");
+      // Scene visual generation runs as sceneOnly background jobs that
+      // never touch project.status, so it isn't covered by useProject's
+      // normal in-progress polling -- poll briefly here instead.
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts += 1;
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
+        if (attempts >= 10) clearInterval(interval);
+      }, 3000);
+    } catch (err) {
+      showToast(getErrorMessage(err), "error");
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          className="btn-secondary px-2.5 py-1.5 text-xs"
+          disabled={regenerateAllVisuals.isPending}
+          onClick={handleRegenerateAllVisuals}
+        >
+          <Wand2 size={12} />
+          {regenerateAllVisuals.isPending ? "Regenerating..." : "Regenerate all visuals"}
+        </button>
+      </div>
       {scenes
         .slice()
         .sort((a, b) => a.sceneNumber - b.sceneNumber)

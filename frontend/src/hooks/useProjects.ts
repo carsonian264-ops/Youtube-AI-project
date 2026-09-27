@@ -137,6 +137,14 @@ export function useGenerateSceneVoice(projectId: string) {
   });
 }
 
+export function useRegenerateSceneVisuals(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post(`/projects/${projectId}/scenes/visuals/regenerate`)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
 export function useRegenerateThumbnails(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({

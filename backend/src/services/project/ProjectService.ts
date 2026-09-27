@@ -151,7 +151,10 @@ export class ProjectService {
       prisma.script.findMany({ where: { projectId }, orderBy: { versionNumber: "desc" } }),
       prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } }),
       prisma.character.findMany({ where: { projectId } }),
-      prisma.asset.findMany({ where: { projectId } }),
+      // Newest first: the frontend picks "the" image/audio for a scene with
+      // assets.find(sceneId, type), which needs the most recent asset to
+      // come first or a regenerated scene keeps showing its old asset.
+      prisma.asset.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.job.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.video.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.thumbnail.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),

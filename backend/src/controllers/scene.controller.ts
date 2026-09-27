@@ -29,7 +29,10 @@ export async function generateSceneVisual(req: Request, res: Response): Promise<
   const job = await enqueueJob({
     projectId: scene.projectId,
     type: "VISUAL_GENERATION",
-    payload: { pipelineRunId, sceneId: scene.id },
+    // sceneOnly: this is a one-off regeneration of a single scene, not the
+    // initial full-pipeline batch -- see the flag's docs in
+    // visualGeneration.worker.ts for why that distinction matters.
+    payload: { pipelineRunId, sceneId: scene.id, sceneOnly: true },
   });
   res.status(202).json({ jobId: job.id });
 }
@@ -40,7 +43,7 @@ export async function generateSceneVoice(req: Request, res: Response): Promise<v
   const job = await enqueueJob({
     projectId: scene.projectId,
     type: "VOICE_GENERATION",
-    payload: { pipelineRunId, sceneId: scene.id },
+    payload: { pipelineRunId, sceneId: scene.id, sceneOnly: true },
   });
   res.status(202).json({ jobId: job.id });
 }

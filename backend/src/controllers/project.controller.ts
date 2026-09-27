@@ -188,3 +188,50 @@ export async function regenerateThumbnails(req: Request, res: Response): Promise
   const job = await enqueueJob({ projectId: project.id, type: "THUMBNAIL_GENERATION", payload: { pipelineRunId } });
   res.status(202).json({ jobId: job.id, pipelineRunId });
 }
+
+/**
+ * Same idea as regenerateThumbnails, for every scene's image instead: wipes
+ * the old IMAGE assets (DB rows + storage objects) and re-enqueues visual
+ * generation for each scene against whatever VISUAL_PROVIDER is configured
+ * now. Each job is marked sceneOnly so it doesn't trip the fan-in cascade
+ * in visualGeneration.worker.ts meant for the initial full-pipeline batch
+ * (see that flag's docs) -- this only refreshes the scene images; the
+ * already-rendered final video still needs a manual re-render afterward
+ * (POST /:id/render) to pick them up.
+ */
+export async function regenerateSceneVisuals(req: Request, res: Response): Promise<void> {
+  const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
+
+  const scenes = await prisma.scene.findMany({ where: { projectId: project.id } });
+  if (scenes.length === 0) {
+    throw new ConflictError("Project has no scenes to regenerate visuals for yet");
+  }
+
+  const existingImages = await prisma.asset.findMany({ where: { projectId: project.id, type: "IMAGE" } });
+  if (existingImages.length > 0) {
+    const storage = createStorageProvider();
+    await Promise.all(
+      existingImages.map((a) =>
+        storage.delete(a.storageKey).catch((err) => {
+          logger.warn({ err, assetId: a.id }, "Failed to delete old scene image from storage; removing its record anyway");
+        }),
+      ),
+    );
+    await prisma.asset.deleteMany({ where: { projectId: project.id, type: "IMAGE" } });
+  }
+
+  await prisma.scene.updateMany({ where: { projectId: project.id }, data: { status: "PENDING" } });
+
+  const pipelineRunId = randomUUID();
+  const jobs = await Promise.all(
+    scenes.map((scene) =>
+      enqueueJob({
+        projectId: project.id,
+        type: "VISUAL_GENERATION",
+        payload: { pipelineRunId, sceneId: scene.id, sceneOnly: true },
+      }),
+    ),
+  );
+
+  res.status(202).json({ jobIds: jobs.map((j) => j.id), pipelineRunId });
+}

@@ -15,6 +15,18 @@ interface Payload {
   projectId: string;
   pipelineRunId: string;
   sceneId: string;
+  /**
+   * Set by a targeted, user-triggered regeneration of one scene (or a
+   * whole project's worth of scenes outside the initial pipeline run) --
+   * see scene.controller.ts / project.controller.ts. Each such call gets
+   * its own pipelineRunId, so without this flag the fan-in check below
+   * would see "1 of 1 done" after that single job and treat it as the
+   * *whole* pipeline's assets finishing: forcing the project into
+   * AUDIO_GENERATING (an illegal transition, and a hard failure, from
+   * READY_FOR_REVIEW/PUBLISHED) and re-queuing voice generation for every
+   * scene in the project, not just the one that was regenerated.
+   */
+  sceneOnly?: boolean;
 }
 
 function buildStyleReference(characters: { visualStyle: string | null; colors: unknown; environment: string | null }[]): string {
@@ -30,7 +42,7 @@ export function startVisualGenerationWorker(): Worker {
   return new Worker<Payload>(
     QUEUE_NAMES.VISUAL_GENERATION,
     async (bullJob: BullJob<Payload>) => {
-      const { jobId, projectId, pipelineRunId, sceneId } = bullJob.data;
+      const { jobId, projectId, pipelineRunId, sceneId, sceneOnly } = bullJob.data;
       await jobService.markActive(jobId);
 
       try {
@@ -61,6 +73,8 @@ export function startVisualGenerationWorker(): Worker {
 
         await prisma.scene.update({ where: { id: sceneId }, data: { status: "READY" } });
         await jobService.markCompleted(jobId, { sceneId });
+
+        if (sceneOnly) return;
 
         const counts = await jobService.countByTypeAndStatus(projectId, "VISUAL_GENERATION", pipelineRunId);
         if (counts.total > 0 && counts.completed + counts.failed === counts.total) {

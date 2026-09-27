@@ -7,6 +7,7 @@ import {
   getProject,
   getProjectStatus,
   listProjects,
+  regenerateSceneVisuals,
   regenerateScript,
   regenerateThumbnails,
   renderProject,
@@ -69,6 +70,11 @@ projectsRouter.post(
   "/:id/thumbnails/regenerate",
   validate(IdParamSchema, "params"),
   asyncHandler(regenerateThumbnails),
+);
+projectsRouter.post(
+  "/:id/scenes/visuals/regenerate",
+  validate(IdParamSchema, "params"),
+  asyncHandler(regenerateSceneVisuals),
 );
 projectsRouter.post(
   "/:id/youtube/publish",

@@ -264,4 +264,74 @@ describe("Projects API", () => {
       expect(unchanged).toBe(2);
     });
   });
+
+  describe("POST /api/projects/:id/scenes/visuals/regenerate", () => {
+    async function createProjectWithSceneImages(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+      const scene = await prisma.scene.create({
+        data: {
+          projectId,
+          sceneNumber: 1,
+          title: "s",
+          narration: "n",
+          visualDescription: "d",
+          visualPrompt: "p",
+          status: "READY",
+        },
+      });
+      await prisma.asset.create({
+        data: { projectId, sceneId: scene.id, type: "IMAGE", provider: "mock", storageKey: "old-image", status: "READY" },
+      });
+      return { projectId, sceneId: scene.id };
+    }
+
+    it("clears every scene's image and enqueues fresh visual-generation jobs", async () => {
+      const { token } = await registerUser("regen-visuals@example.com");
+      const { projectId, sceneId } = await createProjectWithSceneImages(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(202);
+      expect(res.body.jobIds).toEqual(["mock-job-id"]);
+
+      const remainingImages = await prisma.asset.findMany({ where: { projectId, type: "IMAGE" } });
+      expect(remainingImages).toHaveLength(0);
+
+      const scene = await prisma.scene.findUniqueOrThrow({ where: { id: sceneId } });
+      expect(scene.status).toBe("PENDING");
+    });
+
+    it("409s for a project with no scenes yet", async () => {
+      const { token } = await registerUser("regen-visuals-empty@example.com");
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+
+      const res = await request(app)
+        .post(`/api/projects/${created.body.id}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(409);
+    });
+
+    it("403s when a different user tries to regenerate someone else's project's scene visuals", async () => {
+      const userA = await registerUser("regen-visuals-owner@example.com");
+      const userB = await registerUser("regen-visuals-other@example.com");
+      const { projectId } = await createProjectWithSceneImages(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.asset.count({ where: { projectId, type: "IMAGE" } });
+      expect(unchanged).toBe(1);
+    });
+  });
 });
