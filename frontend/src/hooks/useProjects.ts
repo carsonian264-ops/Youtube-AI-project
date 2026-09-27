@@ -137,6 +137,14 @@ export function useGenerateSceneVoice(projectId: string) {
   });
 }
 
+export function useRegenerateThumbnails(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post(`/projects/${projectId}/thumbnails/regenerate`)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
 export function useSelectThumbnail(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({

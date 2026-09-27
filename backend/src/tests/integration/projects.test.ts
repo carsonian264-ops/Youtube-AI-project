@@ -205,4 +205,63 @@ describe("Projects API", () => {
       expect(unchanged.isSelected).toBe(false);
     });
   });
+
+  describe("POST /api/projects/:id/thumbnails/regenerate", () => {
+    async function createProjectWithThumbnails(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+      await prisma.thumbnail.createMany({
+        data: [
+          { projectId, storageKey: "old-a", isSelected: true },
+          { projectId, storageKey: "old-b", isSelected: false },
+        ],
+      });
+      return { projectId };
+    }
+
+    it("discards existing thumbnails and enqueues a fresh generation job", async () => {
+      const { token } = await registerUser("regen-thumbs@example.com");
+      const { projectId } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(202);
+      expect(res.body.jobId).toBe("mock-job-id");
+
+      const remaining = await prisma.thumbnail.findMany({ where: { projectId } });
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("works even when there are no existing thumbnails to clear", async () => {
+      const { token } = await registerUser("regen-empty@example.com");
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+
+      const res = await request(app)
+        .post(`/api/projects/${created.body.id}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(202);
+    });
+
+    it("403s when a different user tries to regenerate someone else's project's thumbnails", async () => {
+      const userA = await registerUser("regen-owner@example.com");
+      const userB = await registerUser("regen-other@example.com");
+      const { projectId } = await createProjectWithThumbnails(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.thumbnail.count({ where: { projectId } });
+      expect(unchanged).toBe(2);
+    });
+  });
 });

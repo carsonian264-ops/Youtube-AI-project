@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileText,
   Clapperboard,
@@ -25,6 +25,7 @@ import {
   useProject,
   useRegenerateScene,
   useRegenerateScript,
+  useRegenerateThumbnails,
   useRenderProject,
   useRunQualityCheck,
   useSelectThumbnail,
@@ -370,13 +371,34 @@ function AssetsTab({ assets }: { assets: Asset[] }) {
 
 function VideoTab({ projectId, video, thumbnails }: { projectId: string; video: Video | undefined; thumbnails: Thumbnail[] }) {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const selectThumbnail = useSelectThumbnail(projectId);
+  const regenerateThumbnails = useRegenerateThumbnails(projectId);
   const selectedThumbnail = thumbnails.find((t) => t.isSelected) ?? thumbnails[0];
 
   async function handleSelect(thumbnailId: string) {
     if (thumbnailId === selectedThumbnail?.id) return;
     try {
       await selectThumbnail.mutateAsync(thumbnailId);
+    } catch (err) {
+      showToast(getErrorMessage(err), "error");
+    }
+  }
+
+  async function handleRegenerate() {
+    try {
+      await regenerateThumbnails.mutateAsync();
+      showToast("Regenerating thumbnails...", "success");
+      // Thumbnail generation runs as a background job that never touches
+      // project.status, so it isn't covered by useProject's normal
+      // in-progress polling -- poll briefly here instead so the new
+      // candidates show up without a manual page refresh.
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts += 1;
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
+        if (attempts >= 8) clearInterval(interval);
+      }, 2000);
     } catch (err) {
       showToast(getErrorMessage(err), "error");
     }
@@ -401,7 +423,19 @@ function VideoTab({ projectId, video, thumbnails }: { projectId: string; video: 
         )}
       </div>
       <div className="card p-5">
-        <h4 className="mb-3 text-sm font-semibold text-ink-primary">Thumbnail</h4>
+        <div className="mb-3 flex items-center justify-between">
+          <h4 className="text-sm font-semibold text-ink-primary">Thumbnail</h4>
+          {thumbnails.length > 0 && (
+            <button
+              className="btn-ghost px-2 py-1 text-xs"
+              disabled={regenerateThumbnails.isPending}
+              onClick={handleRegenerate}
+            >
+              <RotateCcw size={12} />
+              {regenerateThumbnails.isPending ? "Regenerating..." : "Regenerate"}
+            </button>
+          )}
+        </div>
         {thumbnails.length === 0 ? (
           <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-border bg-surface-raised">
             <p className="text-xs text-ink-muted">Not generated yet</p>

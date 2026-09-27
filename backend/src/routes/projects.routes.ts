@@ -8,6 +8,7 @@ import {
   getProjectStatus,
   listProjects,
   regenerateScript,
+  regenerateThumbnails,
   renderProject,
   runQualityCheck,
   selectThumbnail,
@@ -63,6 +64,11 @@ projectsRouter.post(
   "/:id/thumbnails/:thumbnailId/select",
   validate(ThumbnailSelectParamSchema, "params"),
   asyncHandler(selectThumbnail),
+);
+projectsRouter.post(
+  "/:id/thumbnails/regenerate",
+  validate(IdParamSchema, "params"),
+  asyncHandler(regenerateThumbnails),
 );
 projectsRouter.post(
   "/:id/youtube/publish",
