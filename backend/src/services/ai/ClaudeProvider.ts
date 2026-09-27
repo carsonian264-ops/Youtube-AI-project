@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { env } from "@/config/env";
 import { logger } from "@/utils/logger";
 import { AIResponseValidationError, ProviderError } from "@/utils/errors";
+import { SOUND_EFFECT_PROMPT_HINT } from "@/services/soundeffect/SoundEffectProvider";
 import type {
   AIContentProvider,
   GenerateProjectPlanInput,
@@ -130,8 +131,9 @@ export class ClaudeProvider implements AIContentProvider {
       "Return a JSON object matching this shape exactly:",
       "{ title, concept, targetAudience, estimatedDurationSeconds, tone,",
       "  scenes: [{ sceneNumber, title, narration, visualDescription, visualPrompt,",
-      "             cameraDirection, durationSeconds, soundEffects: string[], transition }] }",
+      "             cameraDirection, durationSeconds, soundEffects, transition }] }",
       "Scene numbers start at 1 and are sequential. Keep narration natural for voiceover.",
+      SOUND_EFFECT_PROMPT_HINT,
     ]
       .filter(Boolean)
       .join("\n");
@@ -171,7 +173,8 @@ export class ClaudeProvider implements AIContentProvider {
       "",
       "Return JSON for exactly one scene:",
       "{ sceneNumber, title, narration, visualDescription, visualPrompt, cameraDirection,",
-      "  durationSeconds, soundEffects: string[], transition }",
+      "  durationSeconds, soundEffects, transition }",
+      SOUND_EFFECT_PROMPT_HINT,
     ]
       .filter(Boolean)
       .join("\n");

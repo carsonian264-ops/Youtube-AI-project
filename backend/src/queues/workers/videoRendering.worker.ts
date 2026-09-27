@@ -11,7 +11,8 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
-import { createMusicProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
+import { createMusicProvider, createSoundEffectProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
+import { isSoundEffectName, type SoundEffectName } from "@/services/soundeffect/SoundEffectProvider";
 import { usageService } from "@/services/usage/UsageService";
 import { NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
@@ -44,6 +45,9 @@ export function startVideoRenderingWorker(): Worker {
         const storage = createStorageProvider();
         await jobService.updateProgress(jobId, 10);
 
+        const soundEffectProvider = createSoundEffectProvider();
+        const sfxTempDirs: string[] = [];
+
         const sceneInputs = [];
         for (const scene of scenes) {
           const [image, audio] = await Promise.all([
@@ -55,7 +59,22 @@ export function startVideoRenderingWorker(): Worker {
           }
           const visualPath = await storage.resolveLocalPath(image.storageKey);
           const audioPath = audio ? await storage.resolveLocalPath(audio.storageKey) : undefined;
-          sceneInputs.push({ visualPath, audioPath, durationSeconds: scene.durationSeconds });
+
+          // The AI is prompted to only use names from SOUND_EFFECT_NAMES,
+          // but it's still free-form text in the database -- anything it
+          // invented outside that list is skipped rather than failing the
+          // scene over a cosmetic accent.
+          const effectNames = (Array.isArray(scene.soundEffects) ? scene.soundEffects : []).filter(
+            (name): name is SoundEffectName => typeof name === "string" && isSoundEffectName(name),
+          );
+          const soundEffectPaths: string[] = [];
+          for (const name of effectNames) {
+            const sfxPath = await soundEffectProvider.getEffect({ name });
+            sfxTempDirs.push(path.dirname(sfxPath));
+            soundEffectPaths.push(sfxPath);
+          }
+
+          sceneInputs.push({ visualPath, audioPath, durationSeconds: scene.durationSeconds, soundEffectPaths });
         }
         await jobService.updateProgress(jobId, 40);
 
@@ -115,6 +134,7 @@ export function startVideoRenderingWorker(): Worker {
           if (musicPath) {
             await fs.rm(path.dirname(musicPath), { recursive: true, force: true }).catch(() => undefined);
           }
+          await Promise.all(sfxTempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)));
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Video rendering failed";

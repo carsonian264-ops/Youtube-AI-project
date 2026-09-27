@@ -83,24 +83,27 @@ export class FFmpegRenderer implements VideoRenderer {
       args.push("-f", "lavfi", "-t", String(duration), "-i", "anullsrc=r=44100:cl=stereo");
     }
 
-    args.push(
-      "-vf",
-      scaleFilter,
-      "-c:v",
-      "libx264",
-      "-tune",
-      "stillimage",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-ar",
-      "44100",
-      "-shortest",
-      "-t",
-      String(duration),
-      outputPath,
-    );
+    const soundEffectPaths = scene.soundEffectPaths ?? [];
+    for (const sfxPath of soundEffectPaths) {
+      args.push("-i", sfxPath);
+    }
+
+    const encodeArgs = ["-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100", "-shortest", "-t", String(duration)];
+
+    if (soundEffectPaths.length > 0) {
+      // Each sound-effect input is much shorter than the scene -- apad
+      // extends it with silence so amix's "duration=first" (matched to
+      // narration/silence at [1:a]) isn't shortened to the effect's length.
+      const sfxLabels = soundEffectPaths.map((_, i) => `[${i + 2}:a]apad[sfx${i}]`).join(";");
+      const mixInputs = ["[1:a]", ...soundEffectPaths.map((_, i) => `[sfx${i}]`)].join("");
+      const filterComplex =
+        `[0:v]${scaleFilter}[vout];` +
+        `${sfxLabels};` +
+        `${mixInputs}amix=inputs=${soundEffectPaths.length + 1}:duration=first[aout]`;
+      args.push("-filter_complex", filterComplex, "-map", "[vout]", "-map", "[aout]", ...encodeArgs, outputPath);
+    } else {
+      args.push("-vf", scaleFilter, ...encodeArgs, outputPath);
+    }
 
     await runFfmpeg(args);
   }

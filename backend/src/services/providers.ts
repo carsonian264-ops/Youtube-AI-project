@@ -22,6 +22,8 @@ import type { VideoRenderer } from "./video/VideoRenderer";
 import { FFmpegRenderer } from "./video/FFmpegRenderer";
 import type { MusicProvider } from "./music/MusicProvider";
 import { GeneratedMusicProvider } from "./music/GeneratedMusicProvider";
+import type { SoundEffectProvider } from "./soundeffect/SoundEffectProvider";
+import { GeneratedSoundEffectProvider } from "./soundeffect/GeneratedSoundEffectProvider";
 import type { PublishingProvider } from "./publishing/PublishingProvider";
 import { YouTubeProvider } from "./publishing/YouTubeProvider";
 import { MockPublishingProvider } from "./publishing/MockPublishingProvider";
@@ -146,6 +148,10 @@ export function createVideoRenderer(): VideoRenderer {
 
 export function createMusicProvider(): MusicProvider {
   return new GeneratedMusicProvider();
+}
+
+export function createSoundEffectProvider(): SoundEffectProvider {
+  return new GeneratedSoundEffectProvider();
 }
 
 export function createPublishingProvider(): PublishingProvider {

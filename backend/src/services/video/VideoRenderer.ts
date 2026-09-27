@@ -7,6 +7,8 @@ export interface RenderSceneInput {
   audioPath?: string;
   /** Scene's planned duration; the renderer extends this to cover narration if it runs longer. */
   durationSeconds: number;
+  /** Local filesystem paths to short sound-effect accents, mixed in at the start of the scene. */
+  soundEffectPaths?: string[];
 }
 
 export interface RenderProjectInput {
