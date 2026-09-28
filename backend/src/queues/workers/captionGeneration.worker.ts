@@ -64,7 +64,17 @@ export function startCaptionGenerationWorker(): Worker {
       } catch (err) {
         const message = err instanceof Error ? err.message : "Caption generation failed";
         logger.error({ err, projectId, jobId }, "Caption generation worker failed");
-        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
+        const lastAttempt = isLastAttempt(bullJob);
+        await jobService.markFailed(jobId, message, !lastAttempt);
+        if (lastAttempt) {
+          // Unlike thumbnail generation (which never gates the state
+          // machine -- see regenerateThumbnails' doc comment), caption
+          // generation is a hard prerequisite for video-rendering: nothing
+          // else enqueues VIDEO_RENDERING if this job never succeeds. Without
+          // this, a permanent failure here would leave the project stuck in
+          // RENDERING forever with no visible error.
+          await projectService.transitionStatus(projectId, "FAILED", message).catch(() => undefined);
+        }
         throw err;
       }
     },

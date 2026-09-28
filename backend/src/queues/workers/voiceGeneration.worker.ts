@@ -6,6 +6,7 @@ import { enqueueJob } from "../enqueue";
 import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
+import { projectService } from "@/services/project/ProjectService";
 import { createVoiceGenerationProvider } from "@/services/providers";
 import { logger } from "@/utils/logger";
 import { measureAudioDurationSeconds } from "@/utils/mediaProbe";
@@ -17,6 +18,40 @@ interface Payload {
   sceneId: string;
   /** See the identical flag in visualGeneration.worker.ts -- same fan-in hazard, same fix. */
   sceneOnly?: boolean;
+}
+
+/**
+ * Same reasoning as visualGeneration.worker.ts's identically-named helper:
+ * called from both the success path and a job's last-retry failure path,
+ * since either could be the one that completes the batch -- if every
+ * scene's narration permanently fails, only the failure-path call would
+ * ever notice the batch is done. Voice generation isn't fatal per-scene
+ * (FFmpegRenderer falls back to silence for a scene with no audio), so
+ * partial failure still proceeds to captions as before; only a *total*
+ * failure (not one single scene has narration) fails the project outright
+ * instead of producing a completely silent video with no explanation.
+ */
+async function maybeAdvanceAfterVoiceGenerationBatch(projectId: string, pipelineRunId: string, lastErrorMessage: string): Promise<void> {
+  const counts = await jobService.countByTypeAndStatus(projectId, "VOICE_GENERATION", pipelineRunId);
+  if (counts.total === 0 || counts.completed + counts.failed !== counts.total) return;
+
+  if (counts.completed === 0) {
+    await projectService
+      .transitionStatus(projectId, "FAILED", `All ${counts.total} scene narration(s) failed to generate: ${lastErrorMessage}`)
+      .catch(() => undefined);
+    return;
+  }
+
+  // Same race as visual-generation's fan-in above: multiple scenes' voice
+  // jobs can finish within the same instant and all reach this branch.
+  // The idempotencyKey ensures only one CAPTION_GENERATION job for this
+  // pipeline run is ever created.
+  await enqueueJob({
+    projectId,
+    type: "CAPTION_GENERATION",
+    payload: { pipelineRunId },
+    idempotencyKey: `caption-generation:${pipelineRunId}`,
+  });
 }
 
 export function startVoiceGenerationWorker(): Worker {
@@ -55,24 +90,16 @@ export function startVoiceGenerationWorker(): Worker {
         await jobService.markCompleted(jobId, { sceneId, durationSeconds });
 
         if (sceneOnly) return;
-
-        const counts = await jobService.countByTypeAndStatus(projectId, "VOICE_GENERATION", pipelineRunId);
-        if (counts.total > 0 && counts.completed + counts.failed === counts.total) {
-          // Same race as visual-generation's fan-in above: multiple
-          // scenes' voice jobs can finish within the same instant and
-          // all reach this branch. The idempotencyKey ensures only one
-          // CAPTION_GENERATION job for this pipeline run is ever created.
-          await enqueueJob({
-            projectId,
-            type: "CAPTION_GENERATION",
-            payload: { pipelineRunId },
-            idempotencyKey: `caption-generation:${pipelineRunId}`,
-          });
-        }
+        await maybeAdvanceAfterVoiceGenerationBatch(projectId, pipelineRunId, "");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Voice generation failed";
         logger.error({ err, projectId, jobId, sceneId }, "Voice generation worker failed");
-        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
+        const lastAttempt = isLastAttempt(bullJob);
+        await jobService.markFailed(jobId, message, !lastAttempt);
+
+        if (lastAttempt && !sceneOnly) {
+          await maybeAdvanceAfterVoiceGenerationBatch(projectId, pipelineRunId, message);
+        }
         throw err;
       }
     },

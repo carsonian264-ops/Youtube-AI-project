@@ -101,6 +101,42 @@ describe("visual-generation queue (real BullMQ + real Redis)", () => {
     expect(voiceJobs).toHaveLength(0);
   }, 20_000);
 
+  it("fails the project when every scene's image generation permanently fails, instead of hanging in ASSETS_GENERATING forever", async () => {
+    // Regression test for a real bug found in production: the fan-in that
+    // decides "has this whole batch finished?" used to live only in the
+    // success path, so if not a single scene's job ever succeeds, nothing
+    // ever checks whether the batch is done -- the project just sits in
+    // ASSETS_GENERATING forever with no visible error, even though every
+    // individual Job row shows FAILED. A nonexistent sceneId makes
+    // findUniqueOrThrow throw deterministically on every one of the 3
+    // configured retry attempts, simulating a provider that's permanently
+    // broken (e.g. out of API balance) without depending on real provider
+    // failure behavior.
+    await prisma.project.update({ where: { id: projectId }, data: { status: "ASSETS_GENERATING" } });
+    const pipelineRunId = "all-fail-run";
+
+    const jobA = await enqueueJob({
+      projectId,
+      type: "VISUAL_GENERATION",
+      payload: { pipelineRunId, sceneId: "00000000-0000-0000-0000-000000000001" },
+    });
+    const jobB = await enqueueJob({
+      projectId,
+      type: "VISUAL_GENERATION",
+      payload: { pipelineRunId, sceneId: "00000000-0000-0000-0000-000000000002" },
+    });
+
+    await waitForJobStatus(jobA.id, ["FAILED"], 30_000);
+    await waitForJobStatus(jobB.id, ["FAILED"], 30_000);
+
+    const updated = await waitForProjectStatus(projectId, ["FAILED"], 10_000);
+    expect(updated.status).toBe("FAILED");
+    expect(updated.failureReason).toContain("2 scene image(s) failed to generate");
+
+    const voiceJobs = await prisma.job.findMany({ where: { projectId, type: "VOICE_GENERATION" } });
+    expect(voiceJobs).toHaveLength(0);
+  }, 40_000);
+
   it("without sceneOnly, a full batch still cascades to audio generation once every scene is done", async () => {
     await prisma.project.update({ where: { id: projectId }, data: { status: "ASSETS_GENERATING" } });
     const pipelineRunId = "full-pipeline-run";
@@ -121,6 +157,31 @@ describe("visual-generation queue (real BullMQ + real Redis)", () => {
     const updated = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     expect(updated.status).toBe("AUDIO_GENERATING");
   }, 20_000);
+
+  it("still cascades to audio generation when only some scenes' images fail (partial failure stays permissive)", async () => {
+    await prisma.project.update({ where: { id: projectId }, data: { status: "ASSETS_GENERATING" } });
+    const pipelineRunId = "partial-fail-run";
+
+    const okJob = await enqueueJob({ projectId, type: "VISUAL_GENERATION", payload: { pipelineRunId, sceneId: sceneAId } });
+    const failJob = await enqueueJob({
+      projectId,
+      type: "VISUAL_GENERATION",
+      payload: { pipelineRunId, sceneId: "00000000-0000-0000-0000-000000000003" },
+    });
+
+    await waitForJobStatus(okJob.id, ["COMPLETED"], 15_000);
+    await waitForJobStatus(failJob.id, ["FAILED"], 30_000);
+
+    // video-rendering (not exercised here) is what surfaces the missing
+    // image for the scene that failed -- this stage's job is just to not
+    // get stuck, which the earlier fan-in-only-on-success-path bug would
+    // have done if the failing job settled after the succeeding one.
+    const voiceJobs = await waitForJobCount(projectId, "VOICE_GENERATION", 2);
+    expect(voiceJobs).toHaveLength(2);
+
+    const updated = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    expect(updated.status).toBe("AUDIO_GENERATING");
+  }, 40_000);
 });
 
 async function waitForJobStatus(jobId: string, statuses: string[], timeoutMs = 15_000) {
@@ -141,4 +202,14 @@ async function waitForJobCount(projectId: string, type: "VOICE_GENERATION", coun
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw new Error(`Project ${projectId} did not reach ${count} ${type} jobs within ${timeoutMs}ms`);
+}
+
+async function waitForProjectStatus(projectId: string, statuses: string[], timeoutMs = 15_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    if (statuses.includes(project.status)) return project;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`Project ${projectId} did not reach status ${statuses.join("/")} within ${timeoutMs}ms`);
 }

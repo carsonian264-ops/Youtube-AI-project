@@ -38,6 +38,57 @@ function buildStyleReference(characters: { visualStyle: string | null; colors: u
   return parts.filter(Boolean).join(" | ");
 }
 
+/**
+ * Runs once every scene's visual-generation job for this pipeline run has
+ * reached a terminal state (COMPLETED or FAILED-with-no-more-retries) --
+ * called from both the success path (the job that happens to finish last)
+ * and the failure path (a job's *last* retry attempt), since either one
+ * could be the one that completes the batch.
+ *
+ * This second call site matters: if every single scene's image generation
+ * permanently fails (e.g. the provider account is out of balance), no job
+ * ever reaches the success path, so without also checking here the fan-in
+ * would never run at all and the project would sit in ASSETS_GENERATING
+ * forever with no visible error -- every individual job shows FAILED, but
+ * nothing ever looks at the batch as a whole.
+ *
+ * If at least one scene got an image, the pipeline still proceeds to
+ * voice-generation as before (permissive partial-failure behavior
+ * unchanged) -- video-rendering already throws a clear per-scene error for
+ * whichever scenes are still missing an image. If *none* got an image,
+ * there's nothing worth rendering, so the project is failed outright here
+ * instead of wastefully generating narration audio for a video that can
+ * never actually render.
+ */
+async function maybeAdvanceAfterVisualGenerationBatch(projectId: string, pipelineRunId: string, lastErrorMessage: string): Promise<void> {
+  const counts = await jobService.countByTypeAndStatus(projectId, "VISUAL_GENERATION", pipelineRunId);
+  if (counts.total === 0 || counts.completed + counts.failed !== counts.total) return;
+
+  if (counts.completed === 0) {
+    await projectService
+      .transitionStatus(projectId, "FAILED", `All ${counts.total} scene image(s) failed to generate: ${lastErrorMessage}`)
+      .catch(() => undefined);
+    return;
+  }
+
+  // Same race as before: multiple scenes' visual-generation jobs run
+  // concurrently (worker concurrency: 3), so more than one can finish
+  // within milliseconds of each other and all observe "all done" here.
+  // The per-scene idempotencyKey below is what collapses those redundant
+  // firings down to exactly one VOICE_GENERATION job per scene instead of
+  // enqueueing the whole batch N times.
+  const scenes = await prisma.scene.findMany({ where: { projectId } });
+  await projectService.transitionStatus(projectId, "AUDIO_GENERATING").catch(() => undefined);
+  for (const s of scenes) {
+    await enqueueJob({
+      projectId,
+      type: "VOICE_GENERATION",
+      payload: { pipelineRunId, sceneId: s.id },
+      idempotencyKey: `voice-generation:${pipelineRunId}:${s.id}`,
+    });
+  }
+}
+
 export function startVisualGenerationWorker(): Worker {
   return new Worker<Payload>(
     QUEUE_NAMES.VISUAL_GENERATION,
@@ -75,32 +126,16 @@ export function startVisualGenerationWorker(): Worker {
         await jobService.markCompleted(jobId, { sceneId });
 
         if (sceneOnly) return;
-
-        const counts = await jobService.countByTypeAndStatus(projectId, "VISUAL_GENERATION", pipelineRunId);
-        if (counts.total > 0 && counts.completed + counts.failed === counts.total) {
-          // Every scene's visual-generation job runs concurrently
-          // (worker concurrency: 3), so the last two or three can finish
-          // within milliseconds of each other and *all* observe "all
-          // done" here -- this branch runs once per scene that happens
-          // to be the last one to complete, not once per project. The
-          // per-scene idempotencyKey below is what collapses those
-          // redundant firings down to exactly one VOICE_GENERATION job
-          // per scene instead of enqueueing the whole batch N times.
-          const scenes = await prisma.scene.findMany({ where: { projectId } });
-          await projectService.transitionStatus(projectId, "AUDIO_GENERATING");
-          for (const s of scenes) {
-            await enqueueJob({
-              projectId,
-              type: "VOICE_GENERATION",
-              payload: { pipelineRunId, sceneId: s.id },
-              idempotencyKey: `voice-generation:${pipelineRunId}:${s.id}`,
-            });
-          }
-        }
+        await maybeAdvanceAfterVisualGenerationBatch(projectId, pipelineRunId, "");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Visual generation failed";
         logger.error({ err, projectId, jobId, sceneId }, "Visual generation worker failed");
-        await jobService.markFailed(jobId, message, !isLastAttempt(bullJob));
+        const lastAttempt = isLastAttempt(bullJob);
+        await jobService.markFailed(jobId, message, !lastAttempt);
+
+        if (lastAttempt && !sceneOnly) {
+          await maybeAdvanceAfterVisualGenerationBatch(projectId, pipelineRunId, message);
+        }
         throw err;
       }
     },
