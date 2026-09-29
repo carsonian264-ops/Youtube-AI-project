@@ -98,6 +98,21 @@ export class JobService {
     await this.closeLatestAttempt(jobId, "COMPLETED");
   }
 
+  /**
+   * For a job that stops because the *project* was cancelled out from
+   * under it while it was still ACTIVE (see contentGeneration.worker.ts's
+   * ProjectTerminatedError) -- distinct from markFailed because this
+   * isn't a failure the user needs to see or retry, it's the pipeline
+   * correctly respecting a cancellation it only just noticed.
+   */
+  async markCancelled(jobId: string, reason: string): Promise<void> {
+    await prisma.job.update({
+      where: { id: jobId },
+      data: { status: "CANCELLED", errorMessage: reason, completedAt: new Date() },
+    });
+    await this.closeLatestAttempt(jobId, "CANCELLED", reason);
+  }
+
   async markFailed(jobId: string, errorMessage: string, willRetry: boolean): Promise<void> {
     await prisma.job.update({
       where: { id: jobId },

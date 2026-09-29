@@ -146,4 +146,192 @@ describe("Projects API", () => {
       expect(second.status).toBe(409);
     });
   });
+
+  describe("POST /api/projects/:id/thumbnails/:thumbnailId/select", () => {
+    async function createProjectWithThumbnails(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+
+      const [first, second, third] = await Promise.all([
+        prisma.thumbnail.create({ data: { projectId, storageKey: "a", isSelected: true } }),
+        prisma.thumbnail.create({ data: { projectId, storageKey: "b", isSelected: false } }),
+        prisma.thumbnail.create({ data: { projectId, storageKey: "c", isSelected: false } }),
+      ]);
+      return { projectId, first, second, third };
+    }
+
+    it("selects exactly one thumbnail, deselecting the others", async () => {
+      const { token } = await registerUser("thumbs@example.com");
+      const { projectId, second } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/${second.id}/select`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(204);
+
+      const thumbnails = await prisma.thumbnail.findMany({ where: { projectId }, orderBy: { storageKey: "asc" } });
+      expect(thumbnails.map((t) => ({ key: t.storageKey, selected: t.isSelected }))).toEqual([
+        { key: "a", selected: false },
+        { key: "b", selected: true },
+        { key: "c", selected: false },
+      ]);
+    });
+
+    it("404s for a thumbnail that belongs to a different project", async () => {
+      const { token } = await registerUser("thumbs2@example.com");
+      const { projectId: projectA } = await createProjectWithThumbnails(token);
+      const { third: thumbFromB } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectA}/thumbnails/${thumbFromB.id}/select`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("403s when a different user tries to select a thumbnail on someone else's project", async () => {
+      const userA = await registerUser("thumbs-owner@example.com");
+      const userB = await registerUser("thumbs-other@example.com");
+      const { projectId, second } = await createProjectWithThumbnails(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/${second.id}/select`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.thumbnail.findUniqueOrThrow({ where: { id: second.id } });
+      expect(unchanged.isSelected).toBe(false);
+    });
+  });
+
+  describe("POST /api/projects/:id/thumbnails/regenerate", () => {
+    async function createProjectWithThumbnails(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+      await prisma.thumbnail.createMany({
+        data: [
+          { projectId, storageKey: "old-a", isSelected: true },
+          { projectId, storageKey: "old-b", isSelected: false },
+        ],
+      });
+      return { projectId };
+    }
+
+    it("discards existing thumbnails and enqueues a fresh generation job", async () => {
+      const { token } = await registerUser("regen-thumbs@example.com");
+      const { projectId } = await createProjectWithThumbnails(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(202);
+      expect(res.body.jobId).toBe("mock-job-id");
+
+      const remaining = await prisma.thumbnail.findMany({ where: { projectId } });
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("works even when there are no existing thumbnails to clear", async () => {
+      const { token } = await registerUser("regen-empty@example.com");
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+
+      const res = await request(app)
+        .post(`/api/projects/${created.body.id}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(202);
+    });
+
+    it("403s when a different user tries to regenerate someone else's project's thumbnails", async () => {
+      const userA = await registerUser("regen-owner@example.com");
+      const userB = await registerUser("regen-other@example.com");
+      const { projectId } = await createProjectWithThumbnails(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/thumbnails/regenerate`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.thumbnail.count({ where: { projectId } });
+      expect(unchanged).toBe(2);
+    });
+  });
+
+  describe("POST /api/projects/:id/scenes/visuals/regenerate", () => {
+    async function createProjectWithSceneImages(token: string) {
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+      const projectId = created.body.id as string;
+      const scene = await prisma.scene.create({
+        data: {
+          projectId,
+          sceneNumber: 1,
+          title: "s",
+          narration: "n",
+          visualDescription: "d",
+          visualPrompt: "p",
+          status: "READY",
+        },
+      });
+      await prisma.asset.create({
+        data: { projectId, sceneId: scene.id, type: "IMAGE", provider: "mock", storageKey: "old-image", status: "READY" },
+      });
+      return { projectId, sceneId: scene.id };
+    }
+
+    it("clears every scene's image and enqueues fresh visual-generation jobs", async () => {
+      const { token } = await registerUser("regen-visuals@example.com");
+      const { projectId, sceneId } = await createProjectWithSceneImages(token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(202);
+      expect(res.body.jobIds).toEqual(["mock-job-id"]);
+
+      const remainingImages = await prisma.asset.findMany({ where: { projectId, type: "IMAGE" } });
+      expect(remainingImages).toHaveLength(0);
+
+      const scene = await prisma.scene.findUniqueOrThrow({ where: { id: sceneId } });
+      expect(scene.status).toBe("PENDING");
+    });
+
+    it("409s for a project with no scenes yet", async () => {
+      const { token } = await registerUser("regen-visuals-empty@example.com");
+      const created = await request(app)
+        .post("/api/projects")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title: "t", concept: "c" });
+
+      const res = await request(app)
+        .post(`/api/projects/${created.body.id}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(409);
+    });
+
+    it("403s when a different user tries to regenerate someone else's project's scene visuals", async () => {
+      const userA = await registerUser("regen-visuals-owner@example.com");
+      const userB = await registerUser("regen-visuals-other@example.com");
+      const { projectId } = await createProjectWithSceneImages(userA.token);
+
+      const res = await request(app)
+        .post(`/api/projects/${projectId}/scenes/visuals/regenerate`)
+        .set("Authorization", `Bearer ${userB.token}`);
+      expect(res.status).toBe(403);
+
+      const unchanged = await prisma.asset.count({ where: { projectId, type: "IMAGE" } });
+      expect(unchanged).toBe(1);
+    });
+  });
 });

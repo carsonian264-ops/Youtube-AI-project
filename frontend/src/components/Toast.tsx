@@ -29,12 +29,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={t.id}
             role="status"
-            className={`pointer-events-auto max-w-sm rounded-lg px-4 py-3 text-sm shadow-lg ${
+            className={`pointer-events-auto max-w-sm rounded-xl border px-4 py-3 text-sm shadow-panel backdrop-blur ${
               t.variant === "success"
-                ? "bg-emerald-600 text-white"
+                ? "border-status-ready/30 bg-status-ready/10 text-status-ready"
                 : t.variant === "error"
-                  ? "bg-red-600 text-white"
-                  : "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                  ? "border-status-failed/30 bg-status-failed/10 text-status-failed"
+                  : "border-border bg-surface-raised text-ink-primary"
             }`}
           >
             {t.message}

@@ -5,11 +5,22 @@ import { prisma } from "@/db/prisma";
 import { env } from "@/config/env";
 import { projectService } from "@/services/project/ProjectService";
 import { enqueueJob } from "@/queues/enqueue";
-import { encryptSecret } from "@/utils/crypto";
+import { createPublishingProvider } from "@/services/providers";
+import { decryptSecret, encryptSecret } from "@/utils/crypto";
 import { signOAuthState, verifyOAuthState } from "@/services/auth/oauthState";
-import { AppError, NotFoundError } from "@/utils/errors";
+import { AppError, ConflictError, NotFoundError } from "@/utils/errors";
 
-const SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"];
+// The youtube.* scopes alone authorize uploading/reading channel data, but
+// carry no identity information -- the oauth2.userinfo.get() call below
+// (used only to get a stable Google account id for the YoutubeAccount
+// row) needs its own scope or Google rejects it with a 401 "missing
+// required authentication credential", not an insufficient-scope error,
+// which makes this easy to misdiagnose as a credentials problem.
+const SCOPES = [
+  "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/userinfo.profile",
+];
 
 function oauthClient() {
   if (!env.YOUTUBE_CLIENT_ID || !env.YOUTUBE_CLIENT_SECRET || !env.YOUTUBE_REDIRECT_URI) {
@@ -166,4 +177,31 @@ export async function getPublishingJob(req: Request, res: Response): Promise<voi
   if (publishingJob.project.userId !== req.user!.id) throw new NotFoundError("Publishing job");
   const { project: _project, ...rest } = publishingJob;
   res.status(200).json(rest);
+}
+
+/**
+ * Live post-publish stats (views/likes/comments) for a completed publish.
+ * Fetched on demand rather than cached -- YouTube's videos.list costs a
+ * single quota unit, cheap enough to call whenever the user actually
+ * wants to see current numbers instead of maintaining a background sync.
+ */
+export async function getPublishingJobStats(req: Request, res: Response): Promise<void> {
+  const publishingJob = await prisma.publishingJob.findUnique({
+    where: { id: requiredParam(req, "id") },
+    include: { project: true, youtubeAccount: true },
+  });
+  if (!publishingJob) throw new NotFoundError("Publishing job");
+  if (publishingJob.project.userId !== req.user!.id) throw new NotFoundError("Publishing job");
+  if (publishingJob.status !== "COMPLETED" || !publishingJob.youtubeVideoId) {
+    throw new ConflictError("This publish hasn't completed yet, so there are no stats to show");
+  }
+
+  const provider = createPublishingProvider();
+  const stats = await provider.getStats({
+    accessToken: decryptSecret(publishingJob.youtubeAccount.accessTokenEnc),
+    refreshToken: decryptSecret(publishingJob.youtubeAccount.refreshTokenEnc),
+    externalVideoId: publishingJob.youtubeVideoId,
+  });
+
+  res.status(200).json(stats);
 }

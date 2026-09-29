@@ -36,32 +36,37 @@ export function JobsProgress({ jobs }: { jobs: JobSummary[] }) {
 
   return (
     <div className="card p-5">
-      <h3 className="mb-3 text-sm font-semibold">Generation progress</h3>
-      <ul className="space-y-3">
+      <h3 className="mb-4 text-sm font-semibold text-ink-primary">Production progress</h3>
+      <ul className="space-y-3.5">
         {rows.map(({ type, summary }) => (
-          <li key={type} className="flex items-center gap-3">
-            <span className="w-32 shrink-0 text-sm text-slate-600 dark:text-slate-400">{TYPE_LABELS[type]}</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-              <div
-                className={clsx(
-                  "h-full rounded-full transition-all",
-                  summary!.status === "done" && "bg-emerald-500",
-                  summary!.status === "active" && "bg-brand-500",
-                  summary!.status === "failed" && "bg-red-500",
-                  summary!.status === "waiting" && "bg-slate-300",
-                )}
-                style={{ width: `${summary!.status === "done" ? 100 : summary!.progress}%` }}
-              />
+          <li key={type}>
+            <div className="flex items-center gap-3">
+              <span className="w-32 shrink-0 text-sm text-ink-secondary">{TYPE_LABELS[type]}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/5">
+                <div
+                  className={clsx(
+                    "h-full rounded-full transition-all duration-500",
+                    summary!.status === "done" && "bg-status-ready",
+                    summary!.status === "active" && "bg-indigo-500",
+                    summary!.status === "failed" && "bg-status-failed",
+                    summary!.status === "waiting" && "bg-white/10",
+                  )}
+                  style={{ width: `${summary!.status === "done" ? 100 : summary!.progress}%` }}
+                />
+              </div>
+              <span className="w-24 shrink-0 text-right text-xs text-ink-muted">
+                {summary!.status === "done"
+                  ? `${summary!.count}/${summary!.count} done`
+                  : summary!.status === "failed"
+                    ? "Failed"
+                    : summary!.status === "active"
+                      ? `${summary!.completed}/${summary!.count} · ${summary!.progress}%`
+                      : "Waiting"}
+              </span>
             </div>
-            <span className="w-24 shrink-0 text-right text-xs text-slate-500 dark:text-slate-400">
-              {summary!.status === "done"
-                ? `${summary!.count}/${summary!.count} ✓`
-                : summary!.status === "failed"
-                  ? "Failed"
-                  : summary!.status === "active"
-                    ? `${summary!.completed}/${summary!.count} · ${summary!.progress}%`
-                    : "Waiting"}
-            </span>
+            {summary!.status === "failed" && summary!.errorMessage && (
+              <p className="ml-[8.75rem] mt-1 text-xs text-status-failed">{summary!.errorMessage}</p>
+            )}
           </li>
         ))}
       </ul>

@@ -11,9 +11,14 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
-import { createStorageProvider, createVideoRenderer } from "@/services/providers";
+import { ProjectStateMachine } from "@/services/project/ProjectStateMachine";
+import { createMusicProvider, createSoundEffectProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
+import { isSoundEffectName, type SoundEffectName } from "@/services/soundeffect/SoundEffectProvider";
+import { parseCameraMotion } from "@/services/video/cameraMotion";
+import { parseTransition } from "@/services/video/transitionType";
+import { VIDEO_STYLE_CONFIG } from "@/services/video/videoStyle";
 import { usageService } from "@/services/usage/UsageService";
-import { NotFoundError, ProviderError } from "@/utils/errors";
+import { InvalidStateTransitionError, NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
 
 interface Payload {
@@ -44,8 +49,12 @@ export function startVideoRenderingWorker(): Worker {
         const storage = createStorageProvider();
         await jobService.updateProgress(jobId, 10);
 
+        const soundEffectProvider = createSoundEffectProvider();
+        const sfxTempDirs: string[] = [];
+        const styleConfig = VIDEO_STYLE_CONFIG[project.videoStyle];
+
         const sceneInputs = [];
-        for (const scene of scenes) {
+        for (const [sceneIndex, scene] of scenes.entries()) {
           const [image, audio] = await Promise.all([
             assetService.latestReadyForScene(scene.id, "IMAGE"),
             assetService.latestReadyForScene(scene.id, "AUDIO"),
@@ -55,57 +64,114 @@ export function startVideoRenderingWorker(): Worker {
           }
           const visualPath = await storage.resolveLocalPath(image.storageKey);
           const audioPath = audio ? await storage.resolveLocalPath(audio.storageKey) : undefined;
-          sceneInputs.push({ visualPath, audioPath, durationSeconds: scene.durationSeconds });
+
+          // The AI is prompted to only use names from SOUND_EFFECT_NAMES,
+          // but it's still free-form text in the database -- anything it
+          // invented outside that list is skipped rather than failing the
+          // scene over a cosmetic accent.
+          const effectNames = (Array.isArray(scene.soundEffects) ? scene.soundEffects : []).filter(
+            (name): name is SoundEffectName => typeof name === "string" && isSoundEffectName(name),
+          );
+          const soundEffectPaths: string[] = [];
+          for (const name of effectNames) {
+            const sfxPath = await soundEffectProvider.getEffect({ name });
+            sfxTempDirs.push(path.dirname(sfxPath));
+            soundEffectPaths.push(sfxPath);
+          }
+
+          sceneInputs.push({
+            visualPath,
+            audioPath,
+            durationSeconds: scene.durationSeconds,
+            soundEffectPaths,
+            cameraMotion: parseCameraMotion(scene.cameraDirection, sceneIndex, styleConfig.cameraMotionRotation),
+            transitionOut: parseTransition(scene.transition, styleConfig.defaultTransition),
+          });
         }
         await jobService.updateProgress(jobId, 40);
 
-        const captionsSrtPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
+        const captionsPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
 
-        const renderer = createVideoRenderer();
-        const tmpOutput = path.join(os.tmpdir(), `final-${randomUUID()}.mp4`);
-        const result = await renderer.render({
-          scenes: sceneInputs,
-          captionsSrtPath,
-          aspectRatio: project.aspectRatio,
-          outputPath: tmpOutput,
-        });
-        await jobService.updateProgress(jobId, 80);
+        const musicPath =
+          project.musicMood === "NONE" ? undefined : await createMusicProvider().getTrack(project.musicMood);
 
-        const data = await fs.readFile(tmpOutput);
-        const key = `projects/${projectId}/final_video/${randomUUID()}.mp4`;
-        const uploaded = await storage.upload({ key, data, contentType: "video/mp4" });
-        await fs.rm(tmpOutput, { force: true });
-
-        await prisma.video.create({
-          data: {
-            projectId,
-            storageKey: uploaded.key,
-            url: uploaded.url,
-            durationSeconds: result.durationSeconds,
+        try {
+          const renderer = createVideoRenderer();
+          const tmpOutput = path.join(os.tmpdir(), `final-${randomUUID()}.mp4`);
+          const result = await renderer.render({
+            scenes: sceneInputs,
+            musicPath,
+            captionsPath,
             aspectRatio: project.aspectRatio,
-            status: "READY",
-          },
-        });
+            transitionDurationScale: styleConfig.transitionDurationScale,
+            qualityTier: project.qualityTier,
+            outputPath: tmpOutput,
+          });
+          await jobService.updateProgress(jobId, 80);
 
-        const wallClockSeconds = (Date.now() - startedAt) / 1000;
-        await usageService.record({
-          userId: project.userId,
-          projectId,
-          type: "RENDER_SECONDS",
-          quantity: wallClockSeconds,
-          unit: "seconds",
-          metadata: { outputDurationSeconds: result.durationSeconds },
-        });
+          const data = await fs.readFile(tmpOutput);
+          const key = `projects/${projectId}/final_video/${randomUUID()}.mp4`;
+          const uploaded = await storage.upload({ key, data, contentType: "video/mp4" });
+          await fs.rm(tmpOutput, { force: true });
 
-        await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
+          await prisma.video.create({
+            data: {
+              projectId,
+              storageKey: uploaded.key,
+              url: uploaded.url,
+              durationSeconds: result.durationSeconds,
+              aspectRatio: project.aspectRatio,
+              status: "READY",
+            },
+          });
 
-        await projectService.transitionStatus(projectId, "QUALITY_CHECK");
-        await enqueueJob({
-          projectId,
-          type: "QUALITY_CHECK",
-          payload: { pipelineRunId: bullJob.data.pipelineRunId },
-          idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
-        });
+          const wallClockSeconds = (Date.now() - startedAt) / 1000;
+          await usageService.record({
+            userId: project.userId,
+            projectId,
+            type: "RENDER_SECONDS",
+            quantity: wallClockSeconds,
+            unit: "seconds",
+            metadata: { outputDurationSeconds: result.durationSeconds },
+          });
+
+          await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
+
+          // The render is the expensive, unrecoverable part of this job, and
+          // it has already succeeded and been recorded above (Video row,
+          // usage record, job COMPLETED). A project cancelled while this job
+          // was rendering must not turn that real, finished work into a
+          // FAILED job -- letting an InvalidStateTransitionError from this
+          // checkpoint propagate to the catch-all below used to do exactly
+          // that, and on a non-final attempt would even put the job back to
+          // PENDING for BullMQ to retry: re-rendering, re-uploading, and
+          // re-billing usage for a video that was already produced. Same
+          // isStopped()-vs-benign-retry distinction as
+          // contentGeneration.worker.ts's advanceStatus.
+          try {
+            await projectService.transitionStatus(projectId, "QUALITY_CHECK");
+            await enqueueJob({
+              projectId,
+              type: "QUALITY_CHECK",
+              payload: { pipelineRunId: bullJob.data.pipelineRunId },
+              idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
+            });
+          } catch (checkpointErr) {
+            if (!(checkpointErr instanceof InvalidStateTransitionError)) throw checkpointErr;
+            const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { status: true } });
+            logger.info(
+              { projectId, jobId, status: current.status },
+              ProjectStateMachine.isStopped(current.status)
+                ? "Render completed but the project is already cancelled/failed; not advancing to quality check"
+                : "Skipping quality-check transition; project already moved past it",
+            );
+          }
+        } finally {
+          if (musicPath) {
+            await fs.rm(path.dirname(musicPath), { recursive: true, force: true }).catch(() => undefined);
+          }
+          await Promise.all(sfxTempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)));
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Video rendering failed";
         logger.error({ err, projectId, jobId }, "Video rendering worker failed");

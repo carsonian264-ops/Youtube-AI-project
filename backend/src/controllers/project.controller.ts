@@ -5,7 +5,9 @@ import { prisma } from "@/db/prisma";
 import { projectService } from "@/services/project/ProjectService";
 import { cancelPendingJobsForProject, enqueueJob } from "@/queues/enqueue";
 import { jobService } from "@/services/job/JobService";
+import { createStorageProvider } from "@/services/providers";
 import { ConflictError } from "@/utils/errors";
+import { logger } from "@/utils/logger";
 
 export async function createProject(req: Request, res: Response): Promise<void> {
   const project = await projectService.create(req.user!.id, req.body);
@@ -108,7 +110,12 @@ export async function renderProject(req: Request, res: Response): Promise<void> 
 
   const claimed = await projectService.transitionStatusIfCurrent(
     project.id,
-    ["AUDIO_GENERATING", "QUALITY_CHECK", "READY_FOR_REVIEW"],
+    // PUBLISHED is included so a project can be re-rendered after a
+    // renderer upgrade -- this only replaces the local video file, never
+    // the already-live YouTube upload (a separate, explicit action), and
+    // deliberately lands back at READY_FOR_REVIEW rather than PUBLISHED
+    // once done (see ProjectStateMachine's PUBLISHED entry).
+    ["AUDIO_GENERATING", "QUALITY_CHECK", "READY_FOR_REVIEW", "PUBLISHED"],
     "RENDERING",
   );
   if (!claimed) {
@@ -150,4 +157,86 @@ export async function cancelProject(req: Request, res: Response): Promise<void> 
   const updated = await projectService.transitionStatus(project.id, "CANCELLED");
   await cancelPendingJobsForProject(project.id);
   res.status(200).json(updated);
+}
+
+export async function selectThumbnail(req: Request, res: Response): Promise<void> {
+  await projectService.selectThumbnail(req.user!.id, requiredParam(req, "id"), requiredParam(req, "thumbnailId"));
+  res.status(204).send();
+}
+
+/**
+ * Discards existing thumbnail candidates and generates a fresh batch --
+ * e.g. after switching VISUAL_PROVIDER away from the mock placeholder, so
+ * a project created under the old config isn't stuck with test-pattern
+ * thumbnails forever. Unlike script/render regeneration this doesn't
+ * touch project.status: thumbnail generation never gated the state
+ * machine (see captionGeneration.worker.ts firing it alongside, not
+ * before, VIDEO_RENDERING), so there's no transition to guard here.
+ */
+export async function regenerateThumbnails(req: Request, res: Response): Promise<void> {
+  const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
+
+  const existing = await prisma.thumbnail.findMany({ where: { projectId: project.id } });
+  if (existing.length > 0) {
+    const storage = createStorageProvider();
+    await Promise.all(
+      existing.map((t) =>
+        storage.delete(t.storageKey).catch((err) => {
+          logger.warn({ err, thumbnailId: t.id }, "Failed to delete old thumbnail from storage; removing its record anyway");
+        }),
+      ),
+    );
+    await prisma.thumbnail.deleteMany({ where: { projectId: project.id } });
+  }
+
+  const pipelineRunId = randomUUID();
+  const job = await enqueueJob({ projectId: project.id, type: "THUMBNAIL_GENERATION", payload: { pipelineRunId } });
+  res.status(202).json({ jobId: job.id, pipelineRunId });
+}
+
+/**
+ * Same idea as regenerateThumbnails, for every scene's image instead: wipes
+ * the old IMAGE assets (DB rows + storage objects) and re-enqueues visual
+ * generation for each scene against whatever VISUAL_PROVIDER is configured
+ * now. Each job is marked sceneOnly so it doesn't trip the fan-in cascade
+ * in visualGeneration.worker.ts meant for the initial full-pipeline batch
+ * (see that flag's docs) -- this only refreshes the scene images; the
+ * already-rendered final video still needs a manual re-render afterward
+ * (POST /:id/render) to pick them up.
+ */
+export async function regenerateSceneVisuals(req: Request, res: Response): Promise<void> {
+  const project = await projectService.getOwned(req.user!.id, requiredParam(req, "id"));
+
+  const scenes = await prisma.scene.findMany({ where: { projectId: project.id } });
+  if (scenes.length === 0) {
+    throw new ConflictError("Project has no scenes to regenerate visuals for yet");
+  }
+
+  const existingImages = await prisma.asset.findMany({ where: { projectId: project.id, type: "IMAGE" } });
+  if (existingImages.length > 0) {
+    const storage = createStorageProvider();
+    await Promise.all(
+      existingImages.map((a) =>
+        storage.delete(a.storageKey).catch((err) => {
+          logger.warn({ err, assetId: a.id }, "Failed to delete old scene image from storage; removing its record anyway");
+        }),
+      ),
+    );
+    await prisma.asset.deleteMany({ where: { projectId: project.id, type: "IMAGE" } });
+  }
+
+  await prisma.scene.updateMany({ where: { projectId: project.id }, data: { status: "PENDING" } });
+
+  const pipelineRunId = randomUUID();
+  const jobs = await Promise.all(
+    scenes.map((scene) =>
+      enqueueJob({
+        projectId: project.id,
+        type: "VISUAL_GENERATION",
+        payload: { pipelineRunId, sceneId: scene.id, sceneOnly: true },
+      }),
+    ),
+  );
+
+  res.status(202).json({ jobIds: jobs.map((j) => j.id), pipelineRunId });
 }

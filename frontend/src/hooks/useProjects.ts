@@ -1,11 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { IN_PROGRESS_STATUSES, type AspectRatio, type Project, type ProjectWorkspace } from "@/types";
+import {
+  IN_PROGRESS_STATUSES,
+  type AspectRatio,
+  type MusicMood,
+  type Project,
+  type ProjectListItem,
+  type ProjectWorkspace,
+  type QualityTier,
+  type VideoStyle,
+} from "@/types";
 
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: async () => (await api.get<Project[]>("/projects")).data,
+    queryFn: async () => (await api.get<ProjectListItem[]>("/projects")).data,
+    // Mirrors useProject()'s self-polling below: while any project in the
+    // list is actively generating, the dashboard and projects list stay
+    // live on their own -- previously only the single-project workspace
+    // page did this, so a project running in the background looked frozen
+    // until you clicked into it or refreshed the page.
+    refetchInterval: (query) => {
+      const projects = query.state.data;
+      const anyInProgress = projects?.some((p) => IN_PROGRESS_STATUSES.includes(p.status));
+      return anyInProgress ? 2000 : false;
+    },
   });
 }
 
@@ -32,6 +51,9 @@ export interface CreateProjectInput {
   tone?: string;
   estimatedDurationSeconds?: number;
   aspectRatio?: AspectRatio;
+  musicMood?: MusicMood;
+  videoStyle?: VideoStyle;
+  qualityTier?: QualityTier;
 }
 
 export function useCreateProject() {
@@ -122,6 +144,32 @@ export function useGenerateSceneVoice(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (sceneId: string) => (await api.post(`/scenes/${sceneId}/voice`)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
+export function useRegenerateSceneVisuals(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post(`/projects/${projectId}/scenes/visuals/regenerate`)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
+export function useRegenerateThumbnails(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post(`/projects/${projectId}/thumbnails/regenerate`)).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
+  });
+}
+
+export function useSelectThumbnail(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (thumbnailId: string) => {
+      await api.post(`/projects/${projectId}/thumbnails/${thumbnailId}/select`);
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", projectId] }),
   });
 }

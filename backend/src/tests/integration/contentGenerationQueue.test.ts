@@ -100,6 +100,37 @@ describe("content-generation queue (real BullMQ + real Redis)", () => {
     // confusing "record not found" log noise.
     await waitForJobStatus(first.id, ["COMPLETED", "FAILED"]);
   }, 20_000);
+
+  it("marks the job CANCELLED (not FAILED) and writes nothing when the project was already cancelled before this job ran", async () => {
+    // Simulates a full-plan job that was already ACTIVE (dequeued) at the
+    // instant the user cancelled the project -- cancelPendingJobsForProject
+    // only removes PENDING jobs, so an already-running one used to keep
+    // going: generating and persisting a script/scenes and enqueueing a
+    // fresh round of (paid) visual-generation jobs for a project the user
+    // had already told the app to stop.
+    await prisma.project.update({ where: { id: projectId }, data: { status: "CANCELLED" } });
+
+    const job = await enqueueJob({
+      projectId,
+      type: "CONTENT_GENERATION",
+      payload: { pipelineRunId: "cancelled-run", idea: "should never be generated", targetDurationSeconds: 60 },
+    });
+
+    const settled = await waitForJobStatus(job.id, ["CANCELLED", "COMPLETED", "FAILED"]);
+    expect(settled.status).toBe("CANCELLED");
+
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    expect(project.status).toBe("CANCELLED");
+
+    const scenes = await prisma.scene.findMany({ where: { projectId } });
+    expect(scenes).toHaveLength(0);
+
+    const script = await prisma.script.findFirst({ where: { projectId } });
+    expect(script).toBeNull();
+
+    const visualJobs = await prisma.job.findMany({ where: { projectId, type: "VISUAL_GENERATION" } });
+    expect(visualJobs).toHaveLength(0);
+  }, 20_000);
 });
 
 async function waitForJobStatus(jobId: string, statuses: string[], timeoutMs = 15_000) {

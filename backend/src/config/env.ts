@@ -1,5 +1,13 @@
-import "dotenv/config";
+import path from "node:path";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+// Load the repo-root .env explicitly rather than relying on dotenv's
+// default cwd-relative lookup: npm workspaces run this script with its
+// cwd set to backend/, not the repo root where .env actually lives (see
+// ENVIRONMENT.md), so the bare `import "dotenv/config"` silently found
+// nothing on a clean checkout.
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 /**
  * Central environment configuration. Every variable the application reads
@@ -25,15 +33,19 @@ const envSchema = z
     JWT_EXPIRES_IN: z.string().default("7d"),
     SESSION_SECRET: z.string().min(16, "SESSION_SECRET must be at least 16 characters"),
 
-    AI_PROVIDER: providerEnum(["mock", "claude"]).default("mock"),
+    AI_PROVIDER: providerEnum(["mock", "claude", "gemini"]).default("mock"),
     ANTHROPIC_API_KEY: z.string().optional(),
     ANTHROPIC_MODEL: z.string().default("claude-sonnet-5"),
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
 
-    VISUAL_PROVIDER: providerEnum(["mock", "openart"]).default("mock"),
+    VISUAL_PROVIDER: providerEnum(["mock", "openart", "pollinations"]).default("mock"),
     OPENART_API_KEY: z.string().optional(),
     OPENART_BASE_URL: z.string().url().default("https://api.openart.ai"),
+    POLLINATIONS_API_KEY: z.string().optional(),
+    POLLINATIONS_BASE_URL: z.string().url().default("https://gen.pollinations.ai"),
 
-    VOICE_PROVIDER: providerEnum(["mock", "tts"]).default("mock"),
+    VOICE_PROVIDER: providerEnum(["mock", "tts", "pollinations", "edge-tts", "windows-sapi"]).default("mock"),
     TTS_API_KEY: z.string().optional(),
     TTS_PROVIDER_BASE_URL: z.string().url().default("https://api.elevenlabs.io"),
 
@@ -46,8 +58,14 @@ const envSchema = z
     STORAGE_SECRET_KEY: z.string().optional(),
     STORAGE_PUBLIC_BASE_URL: z.string().optional(),
 
-    FFMPEG_PATH: z.string().default("/usr/bin/ffmpeg"),
-    FFPROBE_PATH: z.string().default("/usr/bin/ffprobe"),
+    // Bare command names, not hardcoded absolute paths: those only ever
+    // matched Linux's apt layout (/usr/bin/ffmpeg) and broke on every
+    // other OS. Relying on PATH resolution (which Node's child_process
+    // already does for a bare command) works on Linux, macOS and Windows
+    // alike, as long as FFmpeg is installed and on PATH -- which every
+    // installer (apt, brew, winget) already arranges.
+    FFMPEG_PATH: z.string().default("ffmpeg"),
+    FFPROBE_PATH: z.string().default("ffprobe"),
 
     PUBLISHING_PROVIDER: providerEnum(["mock", "youtube"]).default("mock"),
     YOUTUBE_CLIENT_ID: z.string().optional(),
@@ -71,6 +89,13 @@ const envSchema = z
         message: "ANTHROPIC_API_KEY is required when AI_PROVIDER=claude",
       });
     }
+    if (val.AI_PROVIDER === "gemini" && !val.GEMINI_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GEMINI_API_KEY"],
+        message: "GEMINI_API_KEY is required when AI_PROVIDER=gemini",
+      });
+    }
     if (val.VISUAL_PROVIDER === "openart" && !val.OPENART_API_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -78,11 +103,25 @@ const envSchema = z
         message: "OPENART_API_KEY is required when VISUAL_PROVIDER=openart",
       });
     }
+    if (val.VISUAL_PROVIDER === "pollinations" && !val.POLLINATIONS_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POLLINATIONS_API_KEY"],
+        message: "POLLINATIONS_API_KEY is required when VISUAL_PROVIDER=pollinations",
+      });
+    }
     if (val.VOICE_PROVIDER === "tts" && !val.TTS_API_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["TTS_API_KEY"],
         message: "TTS_API_KEY is required when VOICE_PROVIDER=tts",
+      });
+    }
+    if (val.VOICE_PROVIDER === "pollinations" && !val.POLLINATIONS_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["POLLINATIONS_API_KEY"],
+        message: "POLLINATIONS_API_KEY is required when VOICE_PROVIDER=pollinations",
       });
     }
     if (val.STORAGE_PROVIDER === "s3") {

@@ -34,6 +34,7 @@ coverage/
 # LocalStorageProvider.ts, S3StorageProvider.ts) and silently excluded
 # it from every commit until this was caught.
 backend/storage/
+backend/storage-test/
 backend/tmp/
 **/local-storage/
 *.mp4

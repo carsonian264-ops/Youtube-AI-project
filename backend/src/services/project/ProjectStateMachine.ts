@@ -59,7 +59,15 @@ const BASE_TRANSITIONS: Record<ProjectStatus, ProjectStatus[]> = {
   // user can retry.
   READY_FOR_REVIEW: ["PUBLISHING", "ASSETS_GENERATING", "RENDERING", "CANCELLED"],
   PUBLISHING: ["PUBLISHED", "READY_FOR_REVIEW"],
-  PUBLISHED: [],
+  // Re-rendering a published project (e.g. after a renderer upgrade) only
+  // touches the locally-generated video file -- it never touches the
+  // already-live YouTube upload, since publishing is a separate, explicit
+  // action. Landing back at READY_FOR_REVIEW (via the normal
+  // RENDERING -> QUALITY_CHECK -> READY_FOR_REVIEW path) rather than
+  // straight back to PUBLISHED is deliberate: the two are now out of
+  // sync, and silently relabeling the project "published" again would
+  // hide that the improved render was never actually re-uploaded.
+  PUBLISHED: ["RENDERING"],
   FAILED: ["PLANNING", "CANCELLED"],
   CANCELLED: [],
 };
@@ -85,5 +93,21 @@ export class ProjectStateMachine {
 
   static isTerminal(status: ProjectStatus): boolean {
     return TRANSITIONS[status].length === 0;
+  }
+
+  /**
+   * True for a status a job should treat as "the project already stopped
+   * for a reason outside this job's control" -- CANCELLED (explicit user
+   * action, see project.controller.ts's cancelProject) or FAILED (some
+   * other job/path already failed the project out from under this one).
+   * Deliberately distinct from isTerminal(): FAILED can still legally move
+   * on to PLANNING (a user-triggered retry) or CANCELLED, so it isn't
+   * "terminal" in the forward-transition sense, but a job that discovers
+   * mid-flight that the project is FAILED should still discard its
+   * in-progress work rather than persist it, exactly as it would for
+   * CANCELLED. See contentGeneration.worker.ts and voiceGeneration.worker.ts.
+   */
+  static isStopped(status: ProjectStatus): boolean {
+    return status === "CANCELLED" || status === "FAILED";
   }
 }

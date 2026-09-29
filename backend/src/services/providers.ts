@@ -2,18 +2,28 @@ import { env } from "@/config/env";
 import { usageService } from "@/services/usage/UsageService";
 import type { AIContentProvider } from "./ai/AIContentProvider";
 import { ClaudeProvider } from "./ai/ClaudeProvider";
+import { FallbackAIContentProvider } from "./ai/FallbackAIContentProvider";
+import { GeminiProvider } from "./ai/GeminiProvider";
 import { MockAIContentProvider } from "./ai/MockAIContentProvider";
 import type { VisualGenerationProvider } from "./visual/VisualGenerationProvider";
 import { OpenArtProvider } from "./visual/OpenArtProvider";
+import { PollinationsProvider } from "./visual/PollinationsProvider";
 import { MockVisualGenerationProvider } from "./visual/MockVisualGenerationProvider";
 import type { VoiceGenerationProvider } from "./voice/VoiceGenerationProvider";
 import { TTSProvider } from "./voice/TTSProvider";
+import { PollinationsVoiceProvider } from "./voice/PollinationsVoiceProvider";
+import { EdgeVoiceProvider } from "./voice/EdgeVoiceProvider";
+import { WindowsSapiVoiceProvider } from "./voice/WindowsSapiVoiceProvider";
 import { MockVoiceGenerationProvider } from "./voice/MockVoiceGenerationProvider";
 import type { StorageProvider } from "./storage/StorageProvider";
 import { LocalStorageProvider } from "./storage/LocalStorageProvider";
 import { S3StorageProvider } from "./storage/S3StorageProvider";
 import type { VideoRenderer } from "./video/VideoRenderer";
 import { FFmpegRenderer } from "./video/FFmpegRenderer";
+import type { MusicProvider } from "./music/MusicProvider";
+import { GeneratedMusicProvider } from "./music/GeneratedMusicProvider";
+import type { SoundEffectProvider } from "./soundeffect/SoundEffectProvider";
+import { GeneratedSoundEffectProvider } from "./soundeffect/GeneratedSoundEffectProvider";
 import type { PublishingProvider } from "./publishing/PublishingProvider";
 import { YouTubeProvider } from "./publishing/YouTubeProvider";
 import { MockPublishingProvider } from "./publishing/MockPublishingProvider";
@@ -39,7 +49,7 @@ export function createAIContentProvider(usage?: UsageContext): AIContentProvider
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY is not configured but AI_PROVIDER=claude");
     }
-    return new ClaudeProvider({
+    const claude = new ClaudeProvider({
       apiKey: env.ANTHROPIC_API_KEY,
       model: env.ANTHROPIC_MODEL,
       onUsage: usage
@@ -56,6 +66,17 @@ export function createAIContentProvider(usage?: UsageContext): AIContentProvider
           }
         : undefined,
     });
+    // Falls back to the mock provider on a transient outage/rate limit
+    // rather than failing the whole pipeline run -- see
+    // FallbackAIContentProvider for exactly which errors qualify.
+    return new FallbackAIContentProvider(claude, new MockAIContentProvider(), "claude");
+  }
+  if (env.AI_PROVIDER === "gemini") {
+    if (!env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured but AI_PROVIDER=gemini");
+    }
+    const gemini = new GeminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL });
+    return new FallbackAIContentProvider(gemini, new MockAIContentProvider(), "gemini");
   }
   return new MockAIContentProvider();
 }
@@ -67,6 +88,12 @@ export function createVisualGenerationProvider(): VisualGenerationProvider {
     }
     return new OpenArtProvider({ apiKey: env.OPENART_API_KEY, baseUrl: env.OPENART_BASE_URL });
   }
+  if (env.VISUAL_PROVIDER === "pollinations") {
+    if (!env.POLLINATIONS_API_KEY) {
+      throw new Error("POLLINATIONS_API_KEY is not configured but VISUAL_PROVIDER=pollinations");
+    }
+    return new PollinationsProvider({ apiKey: env.POLLINATIONS_API_KEY, baseUrl: env.POLLINATIONS_BASE_URL });
+  }
   return new MockVisualGenerationProvider();
 }
 
@@ -76,6 +103,18 @@ export function createVoiceGenerationProvider(): VoiceGenerationProvider {
       throw new Error("TTS_API_KEY is not configured but VOICE_PROVIDER=tts");
     }
     return new TTSProvider({ apiKey: env.TTS_API_KEY, baseUrl: env.TTS_PROVIDER_BASE_URL });
+  }
+  if (env.VOICE_PROVIDER === "pollinations") {
+    if (!env.POLLINATIONS_API_KEY) {
+      throw new Error("POLLINATIONS_API_KEY is not configured but VOICE_PROVIDER=pollinations");
+    }
+    return new PollinationsVoiceProvider({ apiKey: env.POLLINATIONS_API_KEY, baseUrl: env.POLLINATIONS_BASE_URL });
+  }
+  if (env.VOICE_PROVIDER === "edge-tts") {
+    return new EdgeVoiceProvider();
+  }
+  if (env.VOICE_PROVIDER === "windows-sapi") {
+    return new WindowsSapiVoiceProvider();
   }
   return new MockVoiceGenerationProvider();
 }
@@ -105,6 +144,14 @@ export function createStorageProvider(): StorageProvider {
 
 export function createVideoRenderer(): VideoRenderer {
   return new FFmpegRenderer();
+}
+
+export function createMusicProvider(): MusicProvider {
+  return new GeneratedMusicProvider();
+}
+
+export function createSoundEffectProvider(): SoundEffectProvider {
+  return new GeneratedSoundEffectProvider();
 }
 
 export function createPublishingProvider(): PublishingProvider {

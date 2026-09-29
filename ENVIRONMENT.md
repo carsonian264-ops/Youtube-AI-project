@@ -16,6 +16,7 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgresql://user:pass@host:5432/dbname` |
+| `TEST_DATABASE_URL` | no | Only read by the test suite (`backend/src/tests/setupEnv.ts`). Defaults to `DATABASE_URL`'s connection string with the database name suffixed `_test`. Set this if you want the test database somewhere other than that default. |
 
 ## Redis / background jobs
 
@@ -31,27 +32,31 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `JWT_EXPIRES_IN` | no | Default `7d` |
 | `SESSION_SECRET` | **yes** | ≥16 chars. Also used (via scrypt) to derive the key that encrypts stored YouTube OAuth tokens — see `backend/src/utils/crypto.ts`. |
 
-## AI: Anthropic Claude
+## AI: Anthropic Claude / Google Gemini
 
 | Variable | Required | Notes |
 |---|---|---|
-| `AI_PROVIDER` | no | `mock` (default) or `claude` |
+| `AI_PROVIDER` | no | `mock` (default), `claude` (paid, pay-as-you-go, no free tier), or `gemini` (Google's free tier -- no card required, get a key at aistudio.google.com) |
 | `ANTHROPIC_API_KEY` | only if `AI_PROVIDER=claude` | Never sent to the frontend |
 | `ANTHROPIC_MODEL` | no | Default `claude-sonnet-5` |
+| `GEMINI_API_KEY` | only if `AI_PROVIDER=gemini` | Never sent to the frontend |
+| `GEMINI_MODEL` | no | Default `gemini-3.5-flash` -- within Google's free-tier request limits. `gemini-flash-latest` (the alias for Google's newest model) was tried first but returned persistent 503 "high demand" errors right after that model's release; `gemini-2.5-flash` returns 404 for new API keys. `gemini-3.5-flash` is a good middle ground: current enough to not be deprecated soon, established enough to not be overloaded |
 
-## Visual generation: OpenArt
+## Visual generation: OpenArt / Pollinations
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VISUAL_PROVIDER` | no | `mock` (default) or `openart` |
+| `VISUAL_PROVIDER` | no | `mock` (default), `openart` (paid), or `pollinations` (free account) |
 | `OPENART_API_KEY` | only if `VISUAL_PROVIDER=openart` | |
 | `OPENART_BASE_URL` | no | Default `https://api.openart.ai` |
+| `POLLINATIONS_API_KEY` | only if `VISUAL_PROVIDER=pollinations` | The "secret key" from a free pollinations.ai account -- unauthenticated use is rate-limited to ~1 image/hour/IP, too slow for a multi-scene project |
+| `POLLINATIONS_BASE_URL` | no | Default `https://gen.pollinations.ai` |
 
-## Voice generation (TTS)
+## Voice generation: TTS / Pollinations / Edge TTS / Windows SAPI
 
 | Variable | Required | Notes |
 |---|---|---|
-| `VOICE_PROVIDER` | no | `mock` (default) or `tts` |
+| `VOICE_PROVIDER` | no | `mock` (default), `tts` (paid), `pollinations` (paid -- unlike its image endpoint, Pollinations' voice endpoint requires a funded balance), `edge-tts` (free, no account/key -- uses Microsoft Edge's Read Aloud service via `@travisvn/edge-tts`, but its WebSocket connection has been observed to hang indefinitely rather than error on some networks), or `windows-sapi` (free, no account/key, no network call at all -- uses the TTS engine already built into Windows via PowerShell + `System.Speech`, transcoded to MP3 with the app's existing FFmpeg dependency; Windows-only, the most reliable free option) |
 | `TTS_API_KEY` | only if `VOICE_PROVIDER=tts` | |
 | `TTS_PROVIDER_BASE_URL` | no | Default is an ElevenLabs-compatible endpoint |
 
@@ -72,8 +77,8 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 
 | Variable | Required | Default |
 |---|---|---|
-| `FFMPEG_PATH` | no | `/usr/bin/ffmpeg` |
-| `FFPROBE_PATH` | no | `/usr/bin/ffprobe` |
+| `FFMPEG_PATH` | no | `ffmpeg` -- a bare command name resolved via PATH, so it works on Linux/macOS/Windows alike as long as FFmpeg is installed and on PATH |
+| `FFPROBE_PATH` | no | `ffprobe` -- same as above |
 
 ## Publishing: YouTube
 
@@ -93,6 +98,12 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `LOG_LEVEL` | no | `info` |
 
 Rate limiting is automatically disabled when `NODE_ENV=test` so the integration test suite isn't throttled by production-tuned limits (see `backend/src/middleware/rateLimit.ts`).
+
+## Frontend dev server
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `VITE_BACKEND_URL` | no | `http://localhost:4000` | Only read by `frontend/vite.config.ts` for the dev server's `/api` proxy target. Not a `VITE_`-prefixed variable consumed by application code — the built app always calls same-origin `/api`. |
 
 ## Provider selection
 

@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { PublishingProvider, PublishResult, PublishVideoInput } from "./PublishingProvider";
+import type { GetVideoStatsInput, PublishingProvider, PublishResult, PublishVideoInput, VideoStats } from "./PublishingProvider";
+
+/** Deterministic hash so a given mock video always reports the same stats instead of jittering on every refresh. */
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
 
 /**
  * Zero-network implementation used for local development
@@ -15,5 +24,13 @@ export class MockPublishingProvider implements PublishingProvider {
       externalVideoId,
       url: `https://example.invalid/mock-youtube/${externalVideoId}?title=${encodeURIComponent(input.title)}`,
     };
+  }
+
+  async getStats(input: GetVideoStatsInput): Promise<VideoStats> {
+    const seed = hashString(input.externalVideoId);
+    const viewCount = 50 + (seed % 5000);
+    const likeCount = Math.round(viewCount * 0.08);
+    const commentCount = Math.round(viewCount * 0.01);
+    return { viewCount, likeCount, commentCount };
   }
 }

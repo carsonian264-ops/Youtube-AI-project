@@ -34,6 +34,21 @@ export const IN_PROGRESS_STATUSES: ProjectStatus[] = [
 
 export type AspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
 
+export type MusicMood = "NONE" | "UPBEAT" | "CALM" | "CINEMATIC" | "DRAMATIC";
+
+export type VideoStyle =
+  | "DOCUMENTARY"
+  | "CINEMATIC"
+  | "EDUCATIONAL"
+  | "TECH"
+  | "MOTIVATIONAL"
+  | "STORYTELLING"
+  | "NEWS"
+  | "FACELESS_YOUTUBE"
+  | "SHORT_FORM";
+
+export type QualityTier = "DRAFT" | "STANDARD" | "HIGH";
+
 export interface Project {
   id: string;
   userId: string;
@@ -43,10 +58,20 @@ export interface Project {
   tone: string | null;
   estimatedDurationSeconds: number | null;
   aspectRatio: AspectRatio;
+  musicMood: MusicMood;
+  videoStyle: VideoStyle;
+  qualityTier: QualityTier;
   status: ProjectStatus;
   failureReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Shape returned by GET /projects (the list endpoint) -- includes just
+ * enough of the selected thumbnail/final video to render a real card. */
+export interface ProjectListItem extends Project {
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
 }
 
 export interface Scene {
@@ -119,6 +144,7 @@ export interface Video {
   projectId: string;
   url: string | null;
   durationSeconds: number | null;
+  aspectRatio: AspectRatio;
   status: string;
   createdAt: string;
 }
@@ -130,6 +156,24 @@ export interface Thumbnail {
   isSelected: boolean;
 }
 
+export interface PublishingJob {
+  id: string;
+  projectId: string;
+  youtubeAccountId: string;
+  title: string;
+  visibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
+  status: "PENDING" | "AWAITING_CONFIRMATION" | "UPLOADING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  youtubeVideoId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface VideoStats {
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+}
+
 export interface ProjectWorkspace {
   project: Project;
   scripts: Script[];
@@ -139,6 +183,7 @@ export interface ProjectWorkspace {
   jobs: JobSummary[];
   videos: Video[];
   thumbnails: Thumbnail[];
+  publishingJobs: PublishingJob[];
 }
 
 export interface YoutubeAccount {

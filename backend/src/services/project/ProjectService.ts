@@ -1,5 +1,5 @@
 import { prisma } from "@/db/prisma";
-import type { AspectRatio, Project, ProjectStatus } from "@/generated/prisma";
+import type { AspectRatio, MusicMood, Project, ProjectStatus, QualityTier, VideoStyle } from "@/generated/prisma";
 import { AuthorizationError, ConflictError, NotFoundError } from "@/utils/errors";
 import { ProjectStateMachine } from "./ProjectStateMachine";
 
@@ -10,6 +10,9 @@ export interface CreateProjectInput {
   tone?: string;
   estimatedDurationSeconds?: number;
   aspectRatio?: AspectRatio;
+  musicMood?: MusicMood;
+  videoStyle?: VideoStyle;
+  qualityTier?: QualityTier;
 }
 
 export interface UpdateProjectInput {
@@ -17,6 +20,9 @@ export interface UpdateProjectInput {
   targetAudience?: string;
   tone?: string;
   aspectRatio?: AspectRatio;
+  musicMood?: MusicMood;
+  videoStyle?: VideoStyle;
+  qualityTier?: QualityTier;
 }
 
 /**
@@ -38,13 +44,34 @@ export class ProjectService {
         tone: input.tone,
         estimatedDurationSeconds: input.estimatedDurationSeconds,
         aspectRatio: input.aspectRatio ?? "LANDSCAPE_16_9",
+        musicMood: input.musicMood ?? "NONE",
+        videoStyle: input.videoStyle ?? "CINEMATIC",
+        qualityTier: input.qualityTier ?? "STANDARD",
         status: "DRAFT",
       },
     });
   }
 
-  async list(userId: string): Promise<Project[]> {
-    return prisma.project.findMany({ where: { userId }, orderBy: { updatedAt: "desc" } });
+  /**
+   * Includes just enough from each project's thumbnail/video to render a
+   * real card (thumbnail image, duration) without the list view falling
+   * back to placeholder art or the caller waterfalling a full workspace
+   * fetch per project.
+   */
+  async list(userId: string): Promise<Array<Project & { thumbnailUrl: string | null; durationSeconds: number | null }>> {
+    const projects = await prisma.project.findMany({
+      where: { userId },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        thumbnails: { where: { isSelected: true }, take: 1 },
+        videos: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    return projects.map(({ thumbnails, videos, ...project }) => ({
+      ...project,
+      thumbnailUrl: thumbnails[0]?.url ?? null,
+      durationSeconds: videos[0]?.durationSeconds ?? null,
+    }));
   }
 
   async getOwned(userId: string, projectId: string): Promise<Project> {
@@ -111,18 +138,35 @@ export class ProjectService {
     return result.count === 1;
   }
 
+  async selectThumbnail(userId: string, projectId: string, thumbnailId: string): Promise<void> {
+    await this.getOwned(userId, projectId);
+    const thumbnail = await prisma.thumbnail.findUnique({ where: { id: thumbnailId } });
+    if (!thumbnail || thumbnail.projectId !== projectId) {
+      throw new NotFoundError("Thumbnail");
+    }
+
+    await prisma.$transaction([
+      prisma.thumbnail.updateMany({ where: { projectId }, data: { isSelected: false } }),
+      prisma.thumbnail.update({ where: { id: thumbnailId }, data: { isSelected: true } }),
+    ]);
+  }
+
   async getFullWorkspace(userId: string, projectId: string) {
     const project = await this.getOwned(userId, projectId);
-    const [scripts, scenes, characters, assets, jobs, videos, thumbnails] = await Promise.all([
+    const [scripts, scenes, characters, assets, jobs, videos, thumbnails, publishingJobs] = await Promise.all([
       prisma.script.findMany({ where: { projectId }, orderBy: { versionNumber: "desc" } }),
       prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } }),
       prisma.character.findMany({ where: { projectId } }),
-      prisma.asset.findMany({ where: { projectId } }),
+      // Newest first: the frontend picks "the" image/audio for a scene with
+      // assets.find(sceneId, type), which needs the most recent asset to
+      // come first or a regenerated scene keeps showing its old asset.
+      prisma.asset.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.job.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.video.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
       prisma.thumbnail.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
+      prisma.publishingJob.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } }),
     ]);
-    return { project, scripts, scenes, characters, assets, jobs, videos, thumbnails };
+    return { project, scripts, scenes, characters, assets, jobs, videos, thumbnails, publishingJobs };
   }
 }
 

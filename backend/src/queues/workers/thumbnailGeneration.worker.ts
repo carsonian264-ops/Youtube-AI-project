@@ -6,6 +6,7 @@ import { redisConnection } from "../connection";
 import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { createStorageProvider, createVisualGenerationProvider } from "@/services/providers";
+import { addTitleOverlay } from "@/services/visual/titleOverlay";
 import { usageService } from "@/services/usage/UsageService";
 import { logger } from "@/utils/logger";
 
@@ -14,6 +15,16 @@ interface Payload {
   projectId: string;
   pipelineRunId: string;
 }
+
+// Thumbnails matter a lot for click-through, and a single AI guess rarely
+// nails it -- generating a few visually distinct candidates and letting
+// the user pick beats forcing them to accept (or manually regenerate)
+// whichever one the model happened to produce first.
+const STYLE_VARIANTS = [
+  "extreme close-up on the main subject's exaggerated shocked or excited facial expression, blurred dramatic background",
+  "two or more subjects reacting dramatically toward each other, cinematic lighting, high emotional tension",
+  "dynamic action pose with a bold graphic accent (arrow, circle, or glow) drawing the eye to the key detail",
+];
 
 export function startThumbnailGenerationWorker(): Worker {
   return new Worker<Payload>(
@@ -25,31 +36,65 @@ export function startThumbnailGenerationWorker(): Worker {
       try {
         const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
         const visualProvider = createVisualGenerationProvider();
-
-        const media = await visualProvider.generateImage({
-          prompt: `Bold, high-contrast YouTube thumbnail for a video titled "${project.title}" about: ${project.concept}. Eye-catching but not misleading, minimal text.`,
-          aspectRatio: "LANDSCAPE_16_9",
-        });
-
         const storage = createStorageProvider();
-        const key = `projects/${projectId}/thumbnails/${randomUUID()}.png`;
-        const uploaded = await storage.upload({ key, data: media.data, contentType: media.mimeType });
-
         const existingCount = await prisma.thumbnail.count({ where: { projectId } });
-        await prisma.thumbnail.create({
-          data: { projectId, storageKey: uploaded.key, url: uploaded.url, isSelected: existingCount === 0 },
-        });
 
-        await usageService.record({
-          userId: project.userId,
-          projectId,
-          type: "IMAGE_GENERATION",
-          quantity: 1,
-          unit: "generation",
-          metadata: { kind: "thumbnail", provider: media.provider },
-        });
+        // Aims at the viral-clickbait movie-poster *look* (think Nollywood
+        // thumbnails): a real photorealistic scene with exaggerated
+        // reactions and oversaturated contrast. Explicitly asking the
+        // diffusion model to also draw the title as text in-image (an
+        // earlier version of this prompt did) backfired badly: instead of
+        // a photo with lettering on it, models tend to degrade into a flat
+        // title card, or plaster huge lettering across most of the frame,
+        // because "render this text" dominates the whole composition.
+        // Title text is composited on afterward instead (see
+        // addTitleOverlay below), which also guarantees it's legible.
+        //
+        // The words "YouTube thumbnail" and "movie poster" turned out to be
+        // the problem, not just the missing negative prompt: both formats
+        // *virtually always* carry large title text in the training data a
+        // model like this learned from, so naming either format at all
+        // reintroduces the bias that "no text" is trying to cancel out.
+        // Describing it as a photograph instead -- never naming the format
+        // it'll be used as -- avoids invoking that association in the
+        // first place.
+        const basePrompt = `A dramatic, professional photograph for a video about: ${project.concept}. Photorealistic, oversaturated high-contrast colors, cinematic photography. Pure photography only -- not a poster, not a thumbnail graphic, not a book cover, no graphic design elements, no text, words, letters, or lettering anywhere in the image.`;
+        const negativePrompt =
+          "text, words, letters, titles, poster, movie poster, book cover, album cover, captions, subtitles, watermark, logo, title card, typography, graphic design";
+        const thumbnailKeys: string[] = [];
 
-        await jobService.markCompleted(jobId, { thumbnailKey: uploaded.key });
+        for (const [index, styleVariant] of STYLE_VARIANTS.entries()) {
+          const media = await visualProvider.generateImage({
+            prompt: `${basePrompt} Style: ${styleVariant}.`,
+            aspectRatio: "LANDSCAPE_16_9",
+            negativePrompt,
+          });
+          const overlaid = await addTitleOverlay(media.data, media.mimeType, project.title);
+
+          const key = `projects/${projectId}/thumbnails/${randomUUID()}.png`;
+          const uploaded = await storage.upload({ key, data: overlaid.data, contentType: overlaid.mimeType });
+          thumbnailKeys.push(uploaded.key);
+
+          await prisma.thumbnail.create({
+            data: {
+              projectId,
+              storageKey: uploaded.key,
+              url: uploaded.url,
+              isSelected: existingCount === 0 && index === 0,
+            },
+          });
+
+          await usageService.record({
+            userId: project.userId,
+            projectId,
+            type: "IMAGE_GENERATION",
+            quantity: 1,
+            unit: "generation",
+            metadata: { kind: "thumbnail", provider: media.provider, variant: styleVariant },
+          });
+        }
+
+        await jobService.markCompleted(jobId, { thumbnailKeys });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Thumbnail generation failed";
         logger.error({ err, projectId, jobId }, "Thumbnail generation worker failed");

@@ -1,0 +1,8 @@
+-- CreateEnum
+CREATE TYPE "VideoStyle" AS ENUM ('DOCUMENTARY', 'CINEMATIC', 'EDUCATIONAL', 'TECH', 'MOTIVATIONAL', 'STORYTELLING', 'NEWS', 'FACELESS_YOUTUBE', 'SHORT_FORM');
+
+-- AlterEnum
+ALTER TYPE "CaptionFormat" ADD VALUE 'ASS';
+
+-- AlterTable
+ALTER TABLE "projects" ADD COLUMN     "videoStyle" "VideoStyle" NOT NULL DEFAULT 'CINEMATIC';
