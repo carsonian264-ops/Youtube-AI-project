@@ -16,6 +16,7 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | Variable | Required | Notes |
 |---|---|---|
 | `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgresql://user:pass@host:5432/dbname` |
+| `TEST_DATABASE_URL` | no | Only read by the test suite (`backend/src/tests/setupEnv.ts`). Defaults to `DATABASE_URL`'s connection string with the database name suffixed `_test`. Set this if you want the test database somewhere other than that default. |
 
 ## Redis / background jobs
 
@@ -97,6 +98,12 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | `LOG_LEVEL` | no | `info` |
 
 Rate limiting is automatically disabled when `NODE_ENV=test` so the integration test suite isn't throttled by production-tuned limits (see `backend/src/middleware/rateLimit.ts`).
+
+## Frontend dev server
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `VITE_BACKEND_URL` | no | `http://localhost:4000` | Only read by `frontend/vite.config.ts` for the dev server's `/api` proxy target. Not a `VITE_`-prefixed variable consumed by application code — the built app always calls same-origin `/api`. |
 
 ## Provider selection
 
