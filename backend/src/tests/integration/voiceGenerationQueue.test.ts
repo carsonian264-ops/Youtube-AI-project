@@ -20,7 +20,6 @@ describe("voice-generation queue (real BullMQ + real Redis)", () => {
   let userId: string;
   let projectId: string;
   let sceneAId: string;
-  let sceneBId: string;
 
   beforeAll(() => {
     worker = startVoiceGenerationWorker();
@@ -44,7 +43,7 @@ describe("voice-generation queue (real BullMQ + real Redis)", () => {
     });
     projectId = project.id;
 
-    const [sceneA, sceneB] = await Promise.all([
+    const [sceneA] = await Promise.all([
       prisma.scene.create({
         data: {
           projectId,
@@ -71,7 +70,6 @@ describe("voice-generation queue (real BullMQ + real Redis)", () => {
       }),
     ]);
     sceneAId = sceneA.id;
-    sceneBId = sceneB.id;
   });
 
   afterEach(async () => {
@@ -134,6 +132,28 @@ describe("voice-generation queue (real BullMQ + real Redis)", () => {
 
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     expect(project.status).toBe("READY_FOR_REVIEW");
+
+    const captionJobs = await prisma.job.findMany({ where: { projectId, type: "CAPTION_GENERATION" } });
+    expect(captionJobs).toHaveLength(0);
+  }, 20_000);
+
+  it("does not enqueue caption generation when it finishes a batch that was cancelled out from under it", async () => {
+    // Same race as visualGenerationQueue.test.ts's equivalent case: the job
+    // was already ACTIVE when the user cancelled, so cancelPendingJobsForProject
+    // (which only touches PENDING jobs) leaves it running to completion; the
+    // fan-in that follows used to enqueue caption generation regardless of
+    // whether the project was still on a live pipeline path.
+    await prisma.project.update({ where: { id: projectId }, data: { status: "CANCELLED" } });
+    const pipelineRunId = "cancelled-run";
+
+    const job = await enqueueJob({ projectId, type: "VOICE_GENERATION", payload: { pipelineRunId, sceneId: sceneAId } });
+    const completed = await waitForJobStatus(job.id, ["COMPLETED", "FAILED"]);
+    expect(completed.status).toBe("COMPLETED");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const updated = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    expect(updated.status).toBe("CANCELLED");
 
     const captionJobs = await prisma.job.findMany({ where: { projectId, type: "CAPTION_GENERATION" } });
     expect(captionJobs).toHaveLength(0);

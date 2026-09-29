@@ -94,4 +94,20 @@ export class ProjectStateMachine {
   static isTerminal(status: ProjectStatus): boolean {
     return TRANSITIONS[status].length === 0;
   }
+
+  /**
+   * True for a status a job should treat as "the project already stopped
+   * for a reason outside this job's control" -- CANCELLED (explicit user
+   * action, see project.controller.ts's cancelProject) or FAILED (some
+   * other job/path already failed the project out from under this one).
+   * Deliberately distinct from isTerminal(): FAILED can still legally move
+   * on to PLANNING (a user-triggered retry) or CANCELLED, so it isn't
+   * "terminal" in the forward-transition sense, but a job that discovers
+   * mid-flight that the project is FAILED should still discard its
+   * in-progress work rather than persist it, exactly as it would for
+   * CANCELLED. See contentGeneration.worker.ts and voiceGeneration.worker.ts.
+   */
+  static isStopped(status: ProjectStatus): boolean {
+    return status === "CANCELLED" || status === "FAILED";
+  }
 }

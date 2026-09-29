@@ -182,6 +182,33 @@ describe("visual-generation queue (real BullMQ + real Redis)", () => {
     const updated = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
     expect(updated.status).toBe("AUDIO_GENERATING");
   }, 40_000);
+
+  it("does not resurrect a cancelled project or enqueue voice generation when it finishes a batch that was cancelled out from under it", async () => {
+    // Simulates the real-world race this guards against: the visual
+    // generation job was already ACTIVE (dequeued, mid-flight) when the
+    // user cancelled the project. cancelPendingJobsForProject only touches
+    // PENDING jobs (see project.controller.ts / queues/enqueue.ts), so this
+    // in-flight job runs to completion normally -- the fan-in that follows
+    // is what used to blindly force the project back into AUDIO_GENERATING
+    // and kick off a fresh (paid) round of voice generation regardless.
+    await prisma.project.update({ where: { id: projectId }, data: { status: "CANCELLED" } });
+    const pipelineRunId = "cancelled-run";
+
+    const job = await enqueueJob({ projectId, type: "VISUAL_GENERATION", payload: { pipelineRunId, sceneId: sceneAId } });
+    const completed = await waitForJobStatus(job.id, ["COMPLETED", "FAILED"]);
+    expect(completed.status).toBe("COMPLETED");
+
+    // Give the fan-in a moment to run (it fires synchronously right after
+    // markCompleted, but there's no separate signal to wait on beyond the
+    // job's own COMPLETED status observed above).
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const updated = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    expect(updated.status).toBe("CANCELLED");
+
+    const voiceJobs = await prisma.job.findMany({ where: { projectId, type: "VOICE_GENERATION" } });
+    expect(voiceJobs).toHaveLength(0);
+  }, 20_000);
 });
 
 async function waitForJobStatus(jobId: string, statuses: string[], timeoutMs = 15_000) {

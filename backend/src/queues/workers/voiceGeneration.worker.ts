@@ -7,6 +7,7 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
+import { ProjectStateMachine } from "@/services/project/ProjectStateMachine";
 import { createVoiceGenerationProvider } from "@/services/providers";
 import { logger } from "@/utils/logger";
 import { measureAudioDurationSeconds } from "@/utils/mediaProbe";
@@ -39,6 +40,25 @@ async function maybeAdvanceAfterVoiceGenerationBatch(projectId: string, pipeline
     await projectService
       .transitionStatus(projectId, "FAILED", `All ${counts.total} scene narration(s) failed to generate: ${lastErrorMessage}`)
       .catch(() => undefined);
+    return;
+  }
+
+  // Same reasoning as visual-generation's pre-enqueue guard: don't fan out
+  // into caption generation for a project that was cancelled/failed out
+  // from under this batch while its voice-generation jobs were still
+  // running. There's no single specific "to" status to check here the way
+  // visual-generation checks canTransition(..., "AUDIO_GENERATING") --
+  // voice generation doesn't itself transition the project -- so this
+  // checks isStopped() directly instead (deliberately not isTerminal():
+  // FAILED can still legally move on to PLANNING via a user retry, but a
+  // project that failed via a different job/path is just as much a reason
+  // to stop here as an explicit cancellation).
+  const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { status: true } });
+  if (ProjectStateMachine.isStopped(current.status)) {
+    logger.info(
+      { projectId, status: current.status },
+      "Voice generation batch finished but the project is already cancelled/failed; not enqueueing caption generation",
+    );
     return;
   }
 

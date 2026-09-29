@@ -7,6 +7,7 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
+import { ProjectStateMachine } from "@/services/project/ProjectStateMachine";
 import { createVisualGenerationProvider } from "@/services/providers";
 import { logger } from "@/utils/logger";
 
@@ -68,6 +69,25 @@ async function maybeAdvanceAfterVisualGenerationBatch(projectId: string, pipelin
     await projectService
       .transitionStatus(projectId, "FAILED", `All ${counts.total} scene image(s) failed to generate: ${lastErrorMessage}`)
       .catch(() => undefined);
+    return;
+  }
+
+  // Before fanning out into a fresh round of (paid) voice-generation jobs,
+  // confirm the project is actually still able to move to AUDIO_GENERATING
+  // right now. This used to go straight to transitionStatus(...).catch(()
+  // => undefined) -- swallowing the error unconditionally -- which was
+  // meant to tolerate a *benign* race (another concurrent completion
+  // already advanced the status a moment ago, in which case canTransition
+  // returns true anyway via its same-status shortcut) but also silently
+  // swallowed the case where the project was cancelled/failed out from
+  // under this batch, letting it keep going and re-launch the whole
+  // downstream pipeline for a project the user already stopped.
+  const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { status: true } });
+  if (!ProjectStateMachine.canTransition(current.status, "AUDIO_GENERATING")) {
+    logger.info(
+      { projectId, status: current.status },
+      "Visual generation batch finished but the project is already in a status that can't advance to AUDIO_GENERATING (likely cancelled/failed); not enqueueing voice generation",
+    );
     return;
   }
 

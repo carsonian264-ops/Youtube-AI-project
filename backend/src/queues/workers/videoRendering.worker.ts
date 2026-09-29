@@ -11,13 +11,14 @@ import { isLastAttempt } from "../retry";
 import { jobService } from "@/services/job/JobService";
 import { assetService } from "@/services/asset/AssetService";
 import { projectService } from "@/services/project/ProjectService";
+import { ProjectStateMachine } from "@/services/project/ProjectStateMachine";
 import { createMusicProvider, createSoundEffectProvider, createStorageProvider, createVideoRenderer } from "@/services/providers";
 import { isSoundEffectName, type SoundEffectName } from "@/services/soundeffect/SoundEffectProvider";
 import { parseCameraMotion } from "@/services/video/cameraMotion";
 import { parseTransition } from "@/services/video/transitionType";
 import { VIDEO_STYLE_CONFIG } from "@/services/video/videoStyle";
 import { usageService } from "@/services/usage/UsageService";
-import { NotFoundError, ProviderError } from "@/utils/errors";
+import { InvalidStateTransitionError, NotFoundError, ProviderError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
 
 interface Payload {
@@ -136,13 +137,35 @@ export function startVideoRenderingWorker(): Worker {
 
           await jobService.markCompleted(jobId, { videoKey: uploaded.key, durationSeconds: result.durationSeconds });
 
-          await projectService.transitionStatus(projectId, "QUALITY_CHECK");
-          await enqueueJob({
-            projectId,
-            type: "QUALITY_CHECK",
-            payload: { pipelineRunId: bullJob.data.pipelineRunId },
-            idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
-          });
+          // The render is the expensive, unrecoverable part of this job, and
+          // it has already succeeded and been recorded above (Video row,
+          // usage record, job COMPLETED). A project cancelled while this job
+          // was rendering must not turn that real, finished work into a
+          // FAILED job -- letting an InvalidStateTransitionError from this
+          // checkpoint propagate to the catch-all below used to do exactly
+          // that, and on a non-final attempt would even put the job back to
+          // PENDING for BullMQ to retry: re-rendering, re-uploading, and
+          // re-billing usage for a video that was already produced. Same
+          // isStopped()-vs-benign-retry distinction as
+          // contentGeneration.worker.ts's advanceStatus.
+          try {
+            await projectService.transitionStatus(projectId, "QUALITY_CHECK");
+            await enqueueJob({
+              projectId,
+              type: "QUALITY_CHECK",
+              payload: { pipelineRunId: bullJob.data.pipelineRunId },
+              idempotencyKey: `quality-check:${bullJob.data.pipelineRunId}`,
+            });
+          } catch (checkpointErr) {
+            if (!(checkpointErr instanceof InvalidStateTransitionError)) throw checkpointErr;
+            const current = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { status: true } });
+            logger.info(
+              { projectId, jobId, status: current.status },
+              ProjectStateMachine.isStopped(current.status)
+                ? "Render completed but the project is already cancelled/failed; not advancing to quality check"
+                : "Skipping quality-check transition; project already moved past it",
+            );
+          }
         } finally {
           if (musicPath) {
             await fs.rm(path.dirname(musicPath), { recursive: true, force: true }).catch(() => undefined);
