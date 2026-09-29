@@ -100,17 +100,19 @@ export default function CreateProject() {
           id="idea"
           required
           rows={4}
+          maxLength={2000}
           className="w-full resize-none rounded-xl border border-border bg-surface-raised px-4 py-3.5 text-[15px] leading-relaxed text-ink-primary placeholder:text-ink-muted focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
           placeholder="Describe the video you want to create... e.g. a 5-minute explainer on how artificial intelligence will change software development"
           value={idea}
           onChange={(e) => setIdea(e.target.value)}
         />
+        <p className="-mt-4 text-right text-xs text-ink-muted">{idea.length}/2000</p>
 
         <div>
           <label className="label" htmlFor="title">
             Title <span className="text-ink-muted">(optional — we'll draft one if left blank)</span>
           </label>
-          <input id="title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input id="title" className="input" maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -132,7 +134,7 @@ export default function CreateProject() {
             <label className="label" htmlFor="tone">
               Tone
             </label>
-            <input id="tone" className="input" value={tone} onChange={(e) => setTone(e.target.value)} />
+            <input id="tone" className="input" maxLength={200} value={tone} onChange={(e) => setTone(e.target.value)} />
           </div>
         </div>
 

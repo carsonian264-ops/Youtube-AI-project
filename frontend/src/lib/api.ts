@@ -30,12 +30,32 @@ api.interceptors.response.use(
 );
 
 export interface ApiErrorBody {
-  error: { code: string; message: string; details?: unknown };
+  error: {
+    code: string;
+    message: string;
+    details?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | unknown;
+  };
 }
 
 export function getErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const body = err.response?.data as ApiErrorBody | undefined;
+    // Every validation failure (validate.ts's per-route Zod schemas, and
+    // any ZodError that reaches errorHandler unvalidated) returns the same
+    // generic "Request validation failed" as `message`, with the actual
+    // per-field reasons only in `details` (Zod's flatten() shape: field
+    // name -> messages, plus top-level formErrors). Surfacing those here
+    // is the difference between "Request validation failed" and "title:
+    // String must contain at most 200 character(s)" for e.g. a too-long
+    // project title or an empty YouTube publish description.
+    const details = body?.error?.details as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
+    if (details && (details.fieldErrors || details.formErrors)) {
+      const messages = [
+        ...(details.formErrors ?? []),
+        ...Object.entries(details.fieldErrors ?? {}).flatMap(([field, msgs]) => msgs.map((m) => `${field}: ${m}`)),
+      ];
+      if (messages.length > 0) return messages.join("; ");
+    }
     if (body?.error?.message) return body.error.message;
     return err.message;
   }

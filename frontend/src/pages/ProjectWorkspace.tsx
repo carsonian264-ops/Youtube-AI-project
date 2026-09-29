@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -261,6 +261,20 @@ function ScenesTab({ projectId, scenes, assets }: { projectId: string; scenes: S
   const regenerateAllVisuals = useRegenerateSceneVisuals(projectId);
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Without this, navigating away (or the sceneOnly jobs' own tab
+  // unmounting) mid-poll left the interval running for its remaining
+  // duration, still invalidating queries against a projectId closed over
+  // from an unmounted component -- and clicking the button again before
+  // the previous poll finished (the mutation's own isPending window is far
+  // shorter than the 30s poll) started a second, untracked interval
+  // stacked on top of the first.
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
 
   if (scenes.length === 0) {
     return <p className="py-8 text-center text-sm text-ink-secondary">No scenes yet — generate a script first.</p>;
@@ -273,11 +287,15 @@ function ScenesTab({ projectId, scenes, assets }: { projectId: string; scenes: S
       // Scene visual generation runs as sceneOnly background jobs that
       // never touch project.status, so it isn't covered by useProject's
       // normal in-progress polling -- poll briefly here instead.
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       let attempts = 0;
-      const interval = setInterval(() => {
+      pollIntervalRef.current = setInterval(() => {
         attempts += 1;
         queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
-        if (attempts >= 10) clearInterval(interval);
+        if (attempts >= 10 && pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
       }, 3000);
     } catch (err) {
       showToast(getErrorMessage(err), "error");
@@ -421,6 +439,16 @@ function VideoTab({ projectId, video, thumbnails }: { projectId: string; video: 
   const selectThumbnail = useSelectThumbnail(projectId);
   const regenerateThumbnails = useRegenerateThumbnails(projectId);
   const selectedThumbnail = thumbnails.find((t) => t.isSelected) ?? thumbnails[0];
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Same leak this guards against as ScenesTab's identical pattern: an
+  // unmount (or a second click) mid-poll used to leave a dangling interval
+  // running, or stack a second one on top of the first.
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
 
   async function handleSelect(thumbnailId: string) {
     if (thumbnailId === selectedThumbnail?.id) return;
@@ -439,11 +467,15 @@ function VideoTab({ projectId, video, thumbnails }: { projectId: string; video: 
       // project.status, so it isn't covered by useProject's normal
       // in-progress polling -- poll briefly here instead so the new
       // candidates show up without a manual page refresh.
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       let attempts = 0;
-      const interval = setInterval(() => {
+      pollIntervalRef.current = setInterval(() => {
         attempts += 1;
         queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
-        if (attempts >= 8) clearInterval(interval);
+        if (attempts >= 8 && pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
       }, 2000);
     } catch (err) {
       showToast(getErrorMessage(err), "error");
@@ -534,6 +566,7 @@ function PublishTab({
   publishingJobs: PublishingJob[];
 }) {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const completedJob = publishingJobs.find((j) => j.status === "COMPLETED" && j.youtubeVideoId);
   const { data: accounts } = useQuery({
     queryKey: ["youtube-accounts"],
@@ -555,9 +588,14 @@ function PublishTab({
   const [publishing, setPublishing] = useState(false);
 
   const canPublish = projectStatus === "READY_FOR_REVIEW";
+  // The backend rejects an empty title/description with a 400 (title:
+  // min(1), description: min(1)) -- checked here too since this control
+  // isn't a <form>, so a plain `required` attribute on the inputs below
+  // would never actually be enforced (no submit event to trigger it).
+  const canSubmit = canPublish && confirmed && Boolean(accountId) && title.trim().length > 0 && description.trim().length > 0;
 
   async function handlePublish() {
-    if (!confirmed || !accountId) return;
+    if (!canSubmit) return;
     setPublishing(true);
     try {
       await api.post(`/projects/${projectId}/youtube/publish`, {
@@ -571,6 +609,13 @@ function PublishTab({
         visibility,
         confirmed: true,
       });
+      // Without this, the workspace query stays cached at READY_FOR_REVIEW
+      // (the status this action just moved the project past), and since
+      // that status isn't in IN_PROGRESS_STATUSES, useProject's own polling
+      // never kicks in to pick up PUBLISHING/PUBLISHED -- the UI would look
+      // frozen until a manual refresh, and the still-enabled Publish button
+      // could be clicked again for a 409 on a publish that already started.
+      await queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
       showToast("Publishing started", "success");
     } catch (err) {
       showToast(getErrorMessage(err), "error");
@@ -646,7 +691,7 @@ function PublishTab({
             </div>
             <div>
               <label className="label">Description</label>
-              <textarea className="input" rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+              <textarea className="input" rows={4} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} />
             </div>
             <div>
               <label className="label">Tags (comma-separated)</label>
@@ -666,7 +711,7 @@ function PublishTab({
               <span>I've reviewed the video, title, description, tags, and thumbnail, and I want to publish this to YouTube now.</span>
             </label>
 
-            <button className="btn-primary w-full" disabled={!canPublish || !confirmed || !accountId || publishing} onClick={handlePublish}>
+            <button className="btn-primary w-full" disabled={!canSubmit || publishing} onClick={handlePublish}>
               <Send size={15} />
               {publishing ? "Publishing..." : "Publish to YouTube"}
             </button>
