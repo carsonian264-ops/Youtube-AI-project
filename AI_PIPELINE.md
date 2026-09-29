@@ -26,6 +26,19 @@ Claude is never trusted to return "a paragraph we parse with regex." Every AI ca
 
 See `ClaudeProvider.requestStructured()` for the implementation of this loop.
 
+## Hook and call-to-action prompting
+
+`generateProjectPlan`'s prompt used to say nothing beyond "scene numbers start at 1" -- scene 1 (the hook, the part that decides whether anyone keeps watching) and the final scene (the call to action) got no more attention than any other beat, which produced generic openings ("In this video...") and bare "like and subscribe" closers with no actual reason attached.
+
+`backend/src/services/ai/scriptPromptHints.ts` exports `HOOK_PROMPT_HINT` and `CTA_PROMPT_HINT`, shared by `ClaudeProvider` and `GeminiProvider` so the two can't drift apart on wording:
+
+- **Hook** — open with a curiosity gap, a surprising/counterintuitive claim, or a direct question; get to the point in the first sentence.
+- **CTA** — end with one specific, concrete ask tied to the exact topic (what to try, what to watch for, what to comment) plus a reason to subscribe, never a bare "like and subscribe."
+
+Both hints are included in `generateProjectPlan`'s prompt (covering the whole script), and conditionally in `regenerateScene`'s prompt (only when the scene being regenerated is actually scene 1 or the last scene -- regenerating a middle beat doesn't need either).
+
+`MockAIContentProvider` (the free, zero-network default) rotates between a few distinct hook/CTA templates keyed off the idea text's length, rather than a single hardcoded line for every project -- the same reasoning as its camera-motion rotation (see `cameraMotion.ts`): a provider that always writes the exact same thing makes it impossible to notice whether hook/CTA quality actually varies, even in local/mock testing.
+
 ## Character/Visual Bible
 
 After a script is generated, a second Claude call extracts every recurring character/subject into a `CharacterBible`. Every subsequent scene-image prompt (`visualGeneration.worker.ts`) appends a style-reference string built from these entries (visual style, palette, environment) so scenes stay visually consistent instead of each image being generated in isolation.

@@ -38,6 +38,33 @@ describe("MockAIContentProvider", () => {
     expect(metadata.title.length).toBeLessThanOrEqual(100);
   });
 
+  it("writes a real hook (curiosity/claim/question) instead of the old generic preamble", async () => {
+    const plan = await provider.generateProjectPlan({ idea: "how compilers work", targetDurationSeconds: 90 });
+    const hook = plan.scenes.find((s) => s.sceneNumber === 1)!.narration;
+    expect(hook).not.toContain("Here's what most people get wrong about:");
+    expect(hook.toLowerCase()).not.toMatch(/^(in this video|today we'll)/);
+  });
+
+  it("writes a real call to action (a concrete ask) instead of the old vague closer", async () => {
+    const plan = await provider.generateProjectPlan({ idea: "how compilers work", targetDurationSeconds: 90 });
+    const cta = plan.scenes.at(-1)!.narration;
+    expect(cta).not.toBe("If this was useful, the next step is up to you.");
+    expect(cta.toLowerCase()).toMatch(/subscribe|comment/);
+  });
+
+  it("varies the hook and CTA wording across different ideas instead of always the same template", async () => {
+    const ideas = ["topic one", "a completely different topic", "yet another idea entirely, quite long"];
+    const hooks = new Set<string>();
+    const ctas = new Set<string>();
+    for (const idea of ideas) {
+      const plan = await provider.generateProjectPlan({ idea, targetDurationSeconds: 90 });
+      hooks.add(plan.scenes[0]!.narration.replace(idea, "IDEA"));
+      ctas.add(plan.scenes.at(-1)!.narration.replace(idea, "IDEA"));
+    }
+    expect(hooks.size).toBeGreaterThan(1);
+    expect(ctas.size).toBeGreaterThan(1);
+  });
+
   it("flags a script with empty narration in the quality check", async () => {
     const plan = await provider.generateProjectPlan({ idea: "topic", targetDurationSeconds: 90 });
     const firstScene = plan.scenes.find((s) => s.sceneNumber === 1);

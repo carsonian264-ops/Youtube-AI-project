@@ -1,5 +1,6 @@
 import { GeminiProvider } from "./GeminiProvider";
 import { ProviderError } from "@/utils/errors";
+import { CTA_PROMPT_HINT, HOOK_PROMPT_HINT } from "./scriptPromptHints";
 
 function mockFetchOnce(status: number, body: unknown) {
   global.fetch = jest.fn().mockResolvedValue({
@@ -50,5 +51,29 @@ describe("GeminiProvider error classification", () => {
     mockFetchOnce(503, { error: { message: "high demand" } });
 
     await expect(provider.generateProjectPlan({ idea: "topic" })).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("GeminiProvider prompts", () => {
+  const provider = new GeminiProvider({ apiKey: "test-key", model: "gemini-test" });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("instructs the model to write a real hook and call to action, not just a generic scene list", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ candidates: [{ content: { parts: [{ text: "{}" }] } }] }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await provider.generateProjectPlan({ idea: "topic" }).catch(() => undefined); // "{}" fails schema validation; the prompt sent is what we're checking
+
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    const userPrompt = body.contents[0].parts[0].text as string;
+    expect(userPrompt).toContain(HOOK_PROMPT_HINT);
+    expect(userPrompt).toContain(CTA_PROMPT_HINT);
   });
 });

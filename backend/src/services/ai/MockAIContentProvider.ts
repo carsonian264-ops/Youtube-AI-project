@@ -29,11 +29,37 @@ const MIDDLE_CAMERA_DIRECTIONS = [
   "slow tilt up",
 ];
 
+/**
+ * Same reasoning as MIDDLE_CAMERA_DIRECTIONS above: a single hardcoded hook
+ * or CTA line read identically on every single project, which -- on top of
+ * being weak on its own ("Here's what most people get wrong about: X." /
+ * "If this was useful, the next step is up to you." had no actual stake or
+ * ask) -- also made it impossible to see the hook/CTA prompt-quality work
+ * (see scriptPromptHints.ts, used by the real Claude/Gemini providers) do
+ * anything visible when testing locally against the free mock provider.
+ * Rotated deterministically by the idea text's length rather than always
+ * picking index 0, same rationale as cameraMotion.ts's rotation.
+ */
+const HOOK_TEMPLATES = [
+  (idea: string) => `Everyone assumes they already understand ${idea} -- but here's the part almost nobody gets right.`,
+  (idea: string) => `What if everything you think you know about ${idea} is missing one crucial detail?`,
+  (idea: string) => `Here's the one thing about ${idea} that changes everything once you actually see it.`,
+];
+
+const CTA_TEMPLATES = [
+  (idea: string) =>
+    `Now you know the real story behind ${idea} -- if you want the next breakdown like this, subscribe and tell me in the comments what to cover next.`,
+  (idea: string) => `That's the core of ${idea}. Subscribe if this helped, and drop a comment with what surprised you most.`,
+  (idea: string) => `If this changed how you see ${idea}, subscribing means you won't miss the next one -- and I read every comment.`,
+];
+
 export class MockAIContentProvider implements AIContentProvider {
   async generateProjectPlan(input: GenerateProjectPlanInput): Promise<ProjectPlan> {
     const targetDuration = input.targetDurationSeconds ?? 180;
     const sceneCount = Math.max(3, Math.min(10, Math.round(targetDuration / 30)));
     const perScene = Math.floor(targetDuration / sceneCount);
+    const hook = HOOK_TEMPLATES[input.idea.length % HOOK_TEMPLATES.length] ?? HOOK_TEMPLATES[0]!;
+    const cta = CTA_TEMPLATES[input.idea.length % CTA_TEMPLATES.length] ?? CTA_TEMPLATES[0]!;
 
     const scenes: Scene[] = Array.from({ length: sceneCount }, (_, i) => {
       const sceneNumber = i + 1;
@@ -43,9 +69,9 @@ export class MockAIContentProvider implements AIContentProvider {
         sceneNumber,
         title: isFirst ? "Hook" : isLast ? "Call to action" : `Beat ${sceneNumber - 1}`,
         narration: isFirst
-          ? `Here's what most people get wrong about: ${input.idea}.`
+          ? hook(input.idea)
           : isLast
-            ? "If this was useful, the next step is up to you."
+            ? cta(input.idea)
             : `Point ${sceneNumber - 1} about ${input.idea}, explained simply with a concrete example.`,
         visualDescription: `Clean, modern visual illustrating "${input.idea}" for scene ${sceneNumber}.`,
         visualPrompt: `Minimalist editorial illustration, scene ${sceneNumber}, subject: ${input.idea}, ${
