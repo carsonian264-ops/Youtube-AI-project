@@ -4,7 +4,7 @@ import { Sparkles } from "lucide-react";
 import { useCreateProject } from "@/hooks/useProjects";
 import { useToast } from "@/components/Toast";
 import { getErrorMessage } from "@/lib/api";
-import type { AspectRatio, MusicMood, VideoStyle } from "@/types";
+import type { AspectRatio, MusicMood, QualityTier, VideoStyle } from "@/types";
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string; hint: string }[] = [
   { value: "LANDSCAPE_16_9", label: "16:9", hint: "YouTube standard" },
@@ -32,6 +32,12 @@ const VIDEO_STYLES: { value: VideoStyle; label: string; hint: string }[] = [
   { value: "SHORT_FORM", label: "Short-form", hint: "Fast cuts, punchy highlight captions" },
 ];
 
+const QUALITY_TIERS: { value: QualityTier; label: string; hint: string }[] = [
+  { value: "DRAFT", label: "Draft", hint: "Fast, lower-res preview" },
+  { value: "STANDARD", label: "Standard", hint: "1080p, balanced (recommended)" },
+  { value: "HIGH", label: "High", hint: "1440p, sharper, slower render" },
+];
+
 function optionClasses(active: boolean) {
   return `rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
     active ? "border-indigo-400/60 bg-indigo-500/12 text-indigo-200" : "border-border text-ink-secondary hover:border-border-strong hover:text-ink-primary"
@@ -50,6 +56,7 @@ export default function CreateProject() {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("LANDSCAPE_16_9");
   const [musicMood, setMusicMood] = useState<MusicMood>("NONE");
   const [videoStyle, setVideoStyle] = useState<VideoStyle>("CINEMATIC");
+  const [qualityTier, setQualityTier] = useState<QualityTier>("STANDARD");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -70,6 +77,7 @@ export default function CreateProject() {
         aspectRatio,
         musicMood,
         videoStyle,
+        qualityTier,
       });
       showToast("Project created", "success");
       navigate(`/projects/${project.id}`);
@@ -145,6 +153,18 @@ export default function CreateProject() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {VIDEO_STYLES.map((option) => (
               <button type="button" key={option.value} onClick={() => setVideoStyle(option.value)} className={optionClasses(videoStyle === option.value)}>
+                <div>{option.label}</div>
+                <div className="mt-0.5 text-[11px] font-normal text-ink-muted">{option.hint}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="label">Quality</span>
+          <div className="grid grid-cols-3 gap-2">
+            {QUALITY_TIERS.map((option) => (
+              <button type="button" key={option.value} onClick={() => setQualityTier(option.value)} className={optionClasses(qualityTier === option.value)}>
                 <div>{option.label}</div>
                 <div className="mt-0.5 text-[11px] font-normal text-ink-muted">{option.hint}</div>
               </button>

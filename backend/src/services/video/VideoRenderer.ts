@@ -2,6 +2,7 @@ import type { CameraMotionType } from "./cameraMotion";
 import type { TransitionType } from "./transitionType";
 
 export type RenderAspectRatio = "LANDSCAPE_16_9" | "PORTRAIT_9_16" | "SQUARE_1_1";
+export type RenderQualityTier = "DRAFT" | "STANDARD" | "HIGH";
 
 export interface RenderSceneInput {
   /** Local filesystem path to the scene's still image or video clip. */
@@ -27,6 +28,8 @@ export interface RenderProjectInput {
   aspectRatio: RenderAspectRatio;
   /** Multiplies every scene-to-scene transition's duration; see videoStyle.ts. Defaults to 1 (unchanged pacing). */
   transitionDurationScale?: number;
+  /** Output resolution + encode settings; see qualityTier.ts. Defaults to STANDARD (unchanged pre-existing behavior). */
+  qualityTier?: RenderQualityTier;
   /** Where to write the final MP4. */
   outputPath: string;
 }

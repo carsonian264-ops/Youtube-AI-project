@@ -1,5 +1,5 @@
 import { prisma } from "@/db/prisma";
-import type { AspectRatio, MusicMood, Project, ProjectStatus, VideoStyle } from "@/generated/prisma";
+import type { AspectRatio, MusicMood, Project, ProjectStatus, QualityTier, VideoStyle } from "@/generated/prisma";
 import { AuthorizationError, ConflictError, NotFoundError } from "@/utils/errors";
 import { ProjectStateMachine } from "./ProjectStateMachine";
 
@@ -12,6 +12,7 @@ export interface CreateProjectInput {
   aspectRatio?: AspectRatio;
   musicMood?: MusicMood;
   videoStyle?: VideoStyle;
+  qualityTier?: QualityTier;
 }
 
 export interface UpdateProjectInput {
@@ -21,6 +22,7 @@ export interface UpdateProjectInput {
   aspectRatio?: AspectRatio;
   musicMood?: MusicMood;
   videoStyle?: VideoStyle;
+  qualityTier?: QualityTier;
 }
 
 /**
@@ -44,6 +46,7 @@ export class ProjectService {
         aspectRatio: input.aspectRatio ?? "LANDSCAPE_16_9",
         musicMood: input.musicMood ?? "NONE",
         videoStyle: input.videoStyle ?? "CINEMATIC",
+        qualityTier: input.qualityTier ?? "STANDARD",
         status: "DRAFT",
       },
     });

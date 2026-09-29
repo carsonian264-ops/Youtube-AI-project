@@ -5,7 +5,7 @@ import { runFfmpeg } from "@/utils/ffmpegExec";
 import { probeDurationSeconds } from "@/utils/mediaProbe";
 import { buildZoompanFilter } from "./cameraMotion";
 import { XFADE_CONFIG, scaledXfadeDuration, type TransitionType } from "./transitionType";
-import { RESOLUTION } from "./resolution";
+import { QUALITY_TIER_CONFIG, type QualityTierConfig } from "./qualityTier";
 import type { RenderProjectInput, RenderResult, VideoRenderer } from "./VideoRenderer";
 
 // Every scene clip is rendered at the same explicit frame rate regardless
@@ -35,34 +35,35 @@ const OUTRO_FADE_SECONDS = 1.0;
  */
 export class FFmpegRenderer implements VideoRenderer {
   async render(input: RenderProjectInput): Promise<RenderResult> {
-    const { width, height } = RESOLUTION[input.aspectRatio];
+    const tier = QUALITY_TIER_CONFIG[input.qualityTier ?? "STANDARD"];
+    const { width, height } = tier.resolution[input.aspectRatio];
     const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "render-"));
 
     try {
       const clipPaths: string[] = [];
       for (const [index, scene] of input.scenes.entries()) {
         const clipPath = path.join(workDir, `scene-${index}.mp4`);
-        await this.renderSceneClip(scene, width, height, clipPath);
+        await this.renderSceneClip(scene, width, height, tier, clipPath);
         clipPaths.push(clipPath);
       }
 
       const transitionsOut = input.scenes.map((s) => s.transitionOut ?? "CROSSFADE");
       const concatPath = path.join(workDir, "concat.mp4");
-      await this.concatWithTransitions(clipPaths, transitionsOut, input.transitionDurationScale ?? 1, concatPath);
+      await this.concatWithTransitions(clipPaths, transitionsOut, input.transitionDurationScale ?? 1, tier, concatPath);
 
       let currentPath = concatPath;
 
       const audioPath = path.join(workDir, "audio-final.mp4");
       if (input.musicPath) {
-        await this.mixMusicWithDucking(currentPath, input.musicPath, audioPath);
+        await this.mixMusicWithDucking(currentPath, input.musicPath, tier, audioPath);
       } else {
-        await this.normalizeAudioOnly(currentPath, audioPath);
+        await this.normalizeAudioOnly(currentPath, tier, audioPath);
       }
       currentPath = audioPath;
 
       if (input.captionsPath) {
         const withCaptionsPath = path.join(workDir, "with-captions.mp4");
-        await this.burnCaptions(currentPath, input.captionsPath, withCaptionsPath);
+        await this.burnCaptions(currentPath, input.captionsPath, tier, withCaptionsPath);
         currentPath = withCaptionsPath;
       }
 
@@ -80,6 +81,7 @@ export class FFmpegRenderer implements VideoRenderer {
     scene: RenderProjectInput["scenes"][number],
     width: number,
     height: number,
+    tier: QualityTierConfig,
     outputPath: string,
   ): Promise<void> {
     const audioDuration = scene.audioPath ? await probeDurationSeconds(scene.audioPath) : 0;
@@ -100,7 +102,27 @@ export class FFmpegRenderer implements VideoRenderer {
       args.push("-i", sfxPath);
     }
 
-    const encodeArgs = ["-c:v", "libx264", "-r", String(FPS), "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100", "-shortest", "-t", String(duration)];
+    const encodeArgs = [
+      "-c:v",
+      "libx264",
+      "-preset",
+      tier.preset,
+      "-crf",
+      String(tier.crf),
+      "-r",
+      String(FPS),
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "aac",
+      "-b:a",
+      `${tier.audioBitrateKbps}k`,
+      "-ar",
+      "44100",
+      "-shortest",
+      "-t",
+      String(duration),
+    ];
 
     if (soundEffectPaths.length > 0) {
       // Each sound-effect input is much shorter than the scene -- apad
@@ -142,7 +164,13 @@ export class FFmpegRenderer implements VideoRenderer {
    * so there's no correctness reason to floor it -- the floor here is
    * purely so an aggressive scale doesn't make the outro imperceptible.
    */
-  private async concatWithTransitions(clipPaths: string[], transitionsOut: TransitionType[], transitionScale: number, outputPath: string): Promise<void> {
+  private async concatWithTransitions(
+    clipPaths: string[],
+    transitionsOut: TransitionType[],
+    transitionScale: number,
+    tier: QualityTierConfig,
+    outputPath: string,
+  ): Promise<void> {
     if (clipPaths.length === 1) {
       await fs.copyFile(clipPaths[0]!, outputPath);
       return;
@@ -193,11 +221,15 @@ export class FFmpegRenderer implements VideoRenderer {
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      tier.preset,
+      "-crf",
+      String(tier.crf),
       "-pix_fmt",
       "yuv420p",
       "-c:a",
       "aac",
+      "-b:a",
+      `${tier.audioBitrateKbps}k`,
       outputPath,
     ]);
   }
@@ -214,7 +246,7 @@ export class FFmpegRenderer implements VideoRenderer {
    * at the end is for -- letting both fight over levels produces an
    * inconsistent, sometimes-quiet result.
    */
-  private async mixMusicWithDucking(videoPath: string, musicPath: string, outputPath: string): Promise<void> {
+  private async mixMusicWithDucking(videoPath: string, musicPath: string, tier: QualityTierConfig, outputPath: string): Promise<void> {
     const totalDuration = await probeDurationSeconds(videoPath);
     const fadeOutStart = Math.max(0, totalDuration - 2);
     const filterComplex =
@@ -240,14 +272,29 @@ export class FFmpegRenderer implements VideoRenderer {
       "copy",
       "-c:a",
       "aac",
+      "-b:a",
+      `${tier.audioBitrateKbps}k`,
       "-shortest",
       outputPath,
     ]);
   }
 
   /** No music: still loudness-normalized so every video has consistent, predictable output volume. */
-  private async normalizeAudioOnly(videoPath: string, outputPath: string): Promise<void> {
-    await runFfmpeg(["-y", "-i", videoPath, "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:v", "copy", "-c:a", "aac", outputPath]);
+  private async normalizeAudioOnly(videoPath: string, tier: QualityTierConfig, outputPath: string): Promise<void> {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      videoPath,
+      "-af",
+      "loudnorm=I=-16:TP=-1.5:LRA=11",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-b:a",
+      `${tier.audioBitrateKbps}k`,
+      outputPath,
+    ]);
   }
 
   /**
@@ -258,7 +305,7 @@ export class FFmpegRenderer implements VideoRenderer {
    * file, which would silently flatten every named caption style back to
    * one hardcoded look, defeating the point of having them.
    */
-  private async burnCaptions(videoPath: string, captionsPath: string, outputPath: string): Promise<void> {
+  private async burnCaptions(videoPath: string, captionsPath: string, tier: QualityTierConfig, outputPath: string): Promise<void> {
     // FFmpeg's filtergraph parser treats a bare backslash inside a
     // single-quoted filter argument as an escape character for whatever
     // follows it -- so a raw Windows path like "C:\Users\...\file.ass"
@@ -270,6 +317,28 @@ export class FFmpegRenderer implements VideoRenderer {
     // letter's colon still needs its own escape since ':' is the filter
     // option separator.
     const escaped = captionsPath.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
-    await runFfmpeg(["-y", "-i", videoPath, "-vf", `subtitles='${escaped}'`, "-c:a", "copy", outputPath]);
+    // Explicit -c:v/-preset/-crf here (this filter always re-encodes video,
+    // it can't be a passthrough): without them ffmpeg silently falls back
+    // to libx264's own defaults (preset=medium, crf=23) regardless of the
+    // tier used for every earlier stage, undoing DRAFT's speed and HIGH's
+    // quality right at the final encode.
+    await runFfmpeg([
+      "-y",
+      "-i",
+      videoPath,
+      "-vf",
+      `subtitles='${escaped}'`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      tier.preset,
+      "-crf",
+      String(tier.crf),
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "copy",
+      outputPath,
+    ]);
   }
 }

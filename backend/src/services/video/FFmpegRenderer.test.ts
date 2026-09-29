@@ -186,4 +186,57 @@ describe("FFmpegRenderer (real ffmpeg)", () => {
     // measurably shorter final video than the 0.5x-scaled one.
     expect(slowResult.durationSeconds).toBeLessThan(fastResult.durationSeconds);
   }, 30_000);
+
+  it("renders at DRAFT's smaller resolution and HIGH's larger resolution instead of always STANDARD's 1080p", async () => {
+    const img = await makeTestImage(workDir, "orange");
+    const audio = await makeTestAudio(workDir, "narration", 300, 2);
+
+    const draftOutput = path.join(workDir, "draft.mp4");
+    const highOutput = path.join(workDir, "high.mp4");
+    await Promise.all([
+      renderer.render({
+        aspectRatio: "LANDSCAPE_16_9",
+        qualityTier: "DRAFT",
+        outputPath: draftOutput,
+        scenes: [{ visualPath: img, audioPath: audio, durationSeconds: 2, cameraMotion: "STATIC" }],
+      }),
+      renderer.render({
+        aspectRatio: "LANDSCAPE_16_9",
+        qualityTier: "HIGH",
+        outputPath: highOutput,
+        scenes: [{ visualPath: img, audioPath: audio, durationSeconds: 2, cameraMotion: "STATIC" }],
+      }),
+    ]);
+
+    const [draftStreams, highStreams] = await Promise.all([probeStreams(draftOutput), probeStreams(highOutput)]);
+    expect(draftStreams.width).toBe(854);
+    expect(draftStreams.height).toBe(480);
+    expect(highStreams.width).toBe(2560);
+    expect(highStreams.height).toBe(1440);
+  }, 30_000);
+
+  it("burns captions correctly at a non-default quality tier (proves burnCaptions' own re-encode respects the tier too)", async () => {
+    const img = await makeTestImage(workDir, "purple");
+    const audio = await makeTestAudio(workDir, "narration", 300, 2);
+    const outputPath = path.join(workDir, "high-with-captions.mp4");
+
+    const ass = captionService.buildAss([{ sceneNumber: 1, narration: "High tier caption test", durationSeconds: 2 }], "CLASSIC", 2560, 1440);
+    const captionsPath = path.join(workDir, "captions-high.ass");
+    await fs.writeFile(captionsPath, ass, "utf-8");
+
+    const result = await renderer.render({
+      aspectRatio: "LANDSCAPE_16_9",
+      qualityTier: "HIGH",
+      outputPath,
+      captionsPath,
+      scenes: [{ visualPath: img, audioPath: audio, durationSeconds: 2, cameraMotion: "STATIC" }],
+    });
+
+    await fs.access(outputPath);
+    const streams = await probeStreams(outputPath);
+    expect(streams.hasVideo).toBe(true);
+    expect(streams.width).toBe(2560);
+    expect(streams.height).toBe(1440);
+    expect(result.durationSeconds).toBeGreaterThan(1.8);
+  }, 20_000);
 });

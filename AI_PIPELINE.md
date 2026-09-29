@@ -105,6 +105,22 @@ Animated styles get a `{\kf<centiseconds>}` fill-sweep tag per word (ASS's nativ
 
 `buildSrt` (plain SRT, no per-style config) is unchanged and still available, but the pipeline itself now always generates ASS.
 
+## Quality/resolution export tiers
+
+`Project.qualityTier` (an enum: `DRAFT`, `STANDARD`, `HIGH`, default `STANDARD`, chosen at project creation) picks the final video's output resolution and encode settings via `QUALITY_TIER_CONFIG` (`services/video/qualityTier.ts`) -- the same "enum is just the persisted choice, the config object is where its meaning lives" pattern as `videoStyle`.
+
+| Tier | Resolution (16:9) | libx264 preset | CRF | Audio bitrate |
+|---|---|---|---|---|
+| `DRAFT` | 854x480 | `ultrafast` | 30 | 96 kbps |
+| `STANDARD` | 1920x1080 | `veryfast` | 23 | 128 kbps |
+| `HIGH` | 2560x1440 | `slow` | 18 | 192 kbps |
+
+`STANDARD` is bit-for-bit the same resolution/preset the renderer always used before this feature existed, so a project that doesn't pick a tier renders exactly as it did before.
+
+HIGH intentionally tops out at 1440p, not 4K: every visual provider this app supports (the mock placeholder, Pollinations) generates source images well below 1080p, and `FFmpegRenderer` already upscales them for the Ken Burns effect (see `cameraMotion.ts`) -- rendering the *output* canvas at 4K on top of an already-upscaled low-resolution source would just produce a bigger file with no real gain in sharpness. A lower CRF (less compression) still visibly reduces compression artifacts at the same source resolution, so `HIGH`'s value is genuinely in encode quality, not a resolution number that outruns what the source images can support.
+
+Every FFmpeg stage that re-encodes video (`renderSceneClip`, `concatWithTransitions`, and `burnCaptions` -- which always re-encodes, since burning subtitles isn't a passthrough) applies the tier's `preset`/`crf` explicitly. Before this, `burnCaptions` had no explicit video codec settings at all and silently fell back to ffmpeg's own defaults (preset `medium`, CRF 23) regardless of what the rest of the pipeline used -- since caption burn-in is usually the very last encode, its settings were quietly overriding everything upstream.
+
 ## Cost/usage tracking
 
 Every Claude call, image generation, voice generation, render, and YouTube upload writes a `UsageRecord` (`services/usage/UsageService.ts`) — token counts for Claude come directly from the Anthropic API response's `usage` field. This is deliberately just a ledger; no billing logic exists yet (see spec section 23).

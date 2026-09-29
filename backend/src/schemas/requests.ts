@@ -25,6 +25,8 @@ const VIDEO_STYLE_VALUES = [
   "SHORT_FORM",
 ] as const;
 
+const QUALITY_TIER_VALUES = ["DRAFT", "STANDARD", "HIGH"] as const;
+
 export const CreateProjectSchema = z.object({
   title: z.string().min(1).max(200),
   concept: z.string().min(1).max(2000),
@@ -34,6 +36,7 @@ export const CreateProjectSchema = z.object({
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
   musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
   videoStyle: z.enum(VIDEO_STYLE_VALUES).optional(),
+  qualityTier: z.enum(QUALITY_TIER_VALUES).optional(),
 });
 
 export const UpdateProjectSchema = z.object({
@@ -43,6 +46,7 @@ export const UpdateProjectSchema = z.object({
   aspectRatio: z.enum(["LANDSCAPE_16_9", "PORTRAIT_9_16", "SQUARE_1_1"]).optional(),
   musicMood: z.enum(["NONE", "UPBEAT", "CALM", "CINEMATIC", "DRAMATIC"]).optional(),
   videoStyle: z.enum(VIDEO_STYLE_VALUES).optional(),
+  qualityTier: z.enum(QUALITY_TIER_VALUES).optional(),
 });
 
 export const IdParamSchema = z.object({

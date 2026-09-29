@@ -47,6 +47,8 @@ export type VideoStyle =
   | "FACELESS_YOUTUBE"
   | "SHORT_FORM";
 
+export type QualityTier = "DRAFT" | "STANDARD" | "HIGH";
+
 export interface Project {
   id: string;
   userId: string;
@@ -58,6 +60,7 @@ export interface Project {
   aspectRatio: AspectRatio;
   musicMood: MusicMood;
   videoStyle: VideoStyle;
+  qualityTier: QualityTier;
   status: ProjectStatus;
   failureReason: string | null;
   createdAt: string;

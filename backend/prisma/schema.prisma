@@ -62,6 +62,15 @@ enum VideoStyle {
   SHORT_FORM
 }
 
+// Same pattern as VideoStyle: this is just the persisted choice, the
+// actual per-tier resolution/encode settings live in
+// services/video/qualityTier.ts.
+enum QualityTier {
+  DRAFT
+  STANDARD
+  HIGH
+}
+
 enum JobType {
   CONTENT_GENERATION
   VISUAL_GENERATION
@@ -160,6 +169,7 @@ model Project {
   estimatedDurationSeconds Int?
   aspectRatio              AspectRatio   @default(LANDSCAPE_16_9)
   videoStyle               VideoStyle    @default(CINEMATIC)
+  qualityTier              QualityTier   @default(STANDARD)
   musicMood                MusicMood     @default(NONE)
   status                   ProjectStatus @default(DRAFT)
   currentVersion           Int           @default(1)

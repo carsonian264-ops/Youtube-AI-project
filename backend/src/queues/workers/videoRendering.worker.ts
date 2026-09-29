@@ -103,6 +103,7 @@ export function startVideoRenderingWorker(): Worker {
             captionsPath,
             aspectRatio: project.aspectRatio,
             transitionDurationScale: styleConfig.transitionDurationScale,
+            qualityTier: project.qualityTier,
             outputPath: tmpOutput,
           });
           await jobService.updateProgress(jobId, 80);
