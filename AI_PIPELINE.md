@@ -9,6 +9,8 @@ The backend never calls the Anthropic SDK (or any vendor SDK) outside of `backen
 
 `backend/src/services/providers.ts` is the single composition root that decides which implementation to hand out, based on `AI_PROVIDER` / `VISUAL_PROVIDER` / `VOICE_PROVIDER` / `STORAGE_PROVIDER` / `PUBLISHING_PROVIDER`.
 
+`ClaudeProvider`/`GeminiProvider` are never used directly -- both are wrapped in `FallbackAIContentProvider`, which degrades to `MockAIContentProvider` on a transient failure (a 503/429, or the provider persistently returning invalid JSON) rather than failing the whole pipeline run. A transient `ProviderError` (503/429 -- the request never even got a response) gets one retry after a short delay first, since "currently experiencing high demand" is usually gone within a few seconds; a validation failure skips that extra retry and falls back immediately, since the provider's own internal retry loop (below) already tried the same request up to 3 times.
+
 ## Structured output contract
 
 Claude is never trusted to return "a paragraph we parse with regex." Every AI call:

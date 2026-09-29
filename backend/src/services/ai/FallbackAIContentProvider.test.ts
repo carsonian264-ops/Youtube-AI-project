@@ -41,7 +41,7 @@ describe("FallbackAIContentProvider", () => {
   it("returns the primary provider's result without touching the fallback when the primary succeeds", async () => {
     const primary = fakeProvider();
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "gemini");
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
 
     const result = await provider.generateProjectPlan({ idea: "topic" });
 
@@ -49,17 +49,48 @@ describe("FallbackAIContentProvider", () => {
     expect(fallback.generateProjectPlan).not.toHaveBeenCalled();
   });
 
-  it("falls back to the secondary provider on a retryable ProviderError", async () => {
-    const primary = fakeProvider({
-      generateProjectPlan: jest.fn().mockRejectedValue(new ProviderError("gemini", "high demand", true)),
-    });
+  it("falls back to the secondary provider on a retryable ProviderError that persists through the retry", async () => {
+    const generateProjectPlan = jest.fn().mockRejectedValue(new ProviderError("gemini", "high demand", true));
+    const primary = fakeProvider({ generateProjectPlan });
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "gemini");
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
 
     const result = await provider.generateProjectPlan({ idea: "topic" });
 
     expect(result).toBe(PLAN);
+    // Retried once against the primary before giving up -- see the next
+    // test for the case where that retry actually succeeds.
+    expect(generateProjectPlan).toHaveBeenCalledTimes(2);
     expect(fallback.generateProjectPlan).toHaveBeenCalledWith({ idea: "topic" });
+  });
+
+  it("retries a transient ProviderError once and uses that result instead of falling back, if the retry succeeds", async () => {
+    const generateProjectPlan = jest
+      .fn()
+      .mockRejectedValueOnce(new ProviderError("gemini", "high demand", true))
+      .mockResolvedValueOnce(PLAN);
+    const primary = fakeProvider({ generateProjectPlan });
+    const fallback = fakeProvider();
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
+
+    const result = await provider.generateProjectPlan({ idea: "topic" });
+
+    expect(result).toBe(PLAN);
+    expect(generateProjectPlan).toHaveBeenCalledTimes(2);
+    expect(fallback.generateProjectPlan).not.toHaveBeenCalled();
+  });
+
+  it("does NOT retry an AIResponseValidationError before falling back (the provider's own internal retries already failed)", async () => {
+    const generateProjectPlan = jest.fn().mockRejectedValue(new AIResponseValidationError("bad json"));
+    const primary = fakeProvider({ generateProjectPlan });
+    const fallback = fakeProvider();
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
+
+    const result = await provider.generateProjectPlan({ idea: "topic" });
+
+    expect(result).toBe(PLAN);
+    expect(generateProjectPlan).toHaveBeenCalledTimes(1);
+    expect(fallback.generateProjectPlan).toHaveBeenCalled();
   });
 
   it("falls back to the secondary provider when the primary keeps returning invalid output", async () => {
@@ -67,7 +98,7 @@ describe("FallbackAIContentProvider", () => {
       generateCharacterBible: jest.fn().mockRejectedValue(new AIResponseValidationError("bad json")),
     });
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "claude");
+    const provider = new FallbackAIContentProvider(primary, fallback, "claude", 0);
 
     const result = await provider.generateCharacterBible(PLAN);
 
@@ -79,7 +110,7 @@ describe("FallbackAIContentProvider", () => {
     const authError = new ProviderError("gemini", "invalid API key", false);
     const primary = fakeProvider({ generateProjectPlan: jest.fn().mockRejectedValue(authError) });
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "gemini");
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
 
     await expect(provider.generateProjectPlan({ idea: "topic" })).rejects.toBe(authError);
     expect(fallback.generateProjectPlan).not.toHaveBeenCalled();
@@ -89,7 +120,7 @@ describe("FallbackAIContentProvider", () => {
     const bug = new TypeError("cannot read property of undefined");
     const primary = fakeProvider({ generateProjectPlan: jest.fn().mockRejectedValue(bug) });
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "gemini");
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
 
     await expect(provider.generateProjectPlan({ idea: "topic" })).rejects.toBe(bug);
     expect(fallback.generateProjectPlan).not.toHaveBeenCalled();
@@ -105,7 +136,7 @@ describe("FallbackAIContentProvider", () => {
       runQualityCheck: jest.fn().mockRejectedValue(retryable()),
     });
     const fallback = fakeProvider();
-    const provider = new FallbackAIContentProvider(primary, fallback, "gemini");
+    const provider = new FallbackAIContentProvider(primary, fallback, "gemini", 0);
 
     await expect(provider.generateProjectPlan({ idea: "topic" })).resolves.toBe(PLAN);
     await expect(provider.generateCharacterBible(PLAN)).resolves.toBe(BIBLE);
