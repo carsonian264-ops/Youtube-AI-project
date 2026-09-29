@@ -154,32 +154,46 @@ async function processFullPlan(data: FullPlanPayload, bullJob: BullJob<Payload>)
 
     const latestScript = await prisma.script.findFirst({ where: { projectId }, orderBy: { versionNumber: "desc" } });
     const versionNumber = (latestScript?.versionNumber ?? 0) + 1;
-    await prisma.script.updateMany({ where: { projectId }, data: { isActive: false } });
-    await prisma.script.create({ data: { projectId, versionNumber, content: plan, isActive: true } });
-
-    await prisma.scene.deleteMany({ where: { projectId } });
-    await prisma.scene.createMany({
-      data: plan.scenes.map((scene) => ({
-        projectId,
-        sceneNumber: scene.sceneNumber,
-        title: scene.title,
-        narration: scene.narration,
-        visualDescription: scene.visualDescription,
-        visualPrompt: scene.visualPrompt,
-        cameraDirection: scene.cameraDirection,
-        durationSeconds: scene.durationSeconds,
-        soundEffects: scene.soundEffects,
-        transition: scene.transition,
-      })),
-    });
+    // Each of these four writes was previously its own separate statement:
+    // a crash (deploy restart, OOM kill) between any two of them -- e.g.
+    // right after scene.deleteMany but before scene.createMany -- used to
+    // permanently wipe the project's scenes (or leave zero active scripts)
+    // with no way to recover short of manually re-running generation, since
+    // a retry of *this* job is the only thing that would ever redo the
+    // write, and only if this wasn't the job's last attempt. Wrapping them
+    // in one transaction makes "replace the project's active script and
+    // scenes" atomic: either all four happen, or none do.
+    await prisma.$transaction([
+      prisma.script.updateMany({ where: { projectId }, data: { isActive: false } }),
+      prisma.script.create({ data: { projectId, versionNumber, content: plan, isActive: true } }),
+      prisma.scene.deleteMany({ where: { projectId } }),
+      prisma.scene.createMany({
+        data: plan.scenes.map((scene) => ({
+          projectId,
+          sceneNumber: scene.sceneNumber,
+          title: scene.title,
+          narration: scene.narration,
+          visualDescription: scene.visualDescription,
+          visualPrompt: scene.visualPrompt,
+          cameraDirection: scene.cameraDirection,
+          durationSeconds: scene.durationSeconds,
+          soundEffects: scene.soundEffects,
+          transition: scene.transition,
+        })),
+      }),
+    ]);
     await jobService.updateProgress(jobId, 60);
     await advanceStatus(projectId, "SCRIPT_READY");
 
     const bible = await ai.generateCharacterBible(plan);
     await assertNotTerminated(projectId, "the character bible");
-    await prisma.character.deleteMany({ where: { projectId } });
-    if (bible.characters.length > 0) {
-      await prisma.character.createMany({
+    // Same atomicity concern as the script/scenes transaction above. An
+    // empty `data` array is a valid no-op createMany, so this doesn't need
+    // a conditional branch (which would otherwise produce two differently-
+    // shaped tuples and trip up $transaction's array overload).
+    await prisma.$transaction([
+      prisma.character.deleteMany({ where: { projectId } }),
+      prisma.character.createMany({
         data: bible.characters.map((c) => ({
           projectId,
           name: c.name,
@@ -192,8 +206,8 @@ async function processFullPlan(data: FullPlanPayload, bullJob: BullJob<Payload>)
           environment: c.environment,
           recurringObjects: c.recurringObjects,
         })),
-      });
-    }
+      }),
+    ]);
     await advanceStatus(projectId, "SCENES_READY");
 
     const scenes = await prisma.scene.findMany({ where: { projectId }, orderBy: { sceneNumber: "asc" } });
@@ -247,26 +261,33 @@ async function processSceneOnly(data: SceneOnlyPayload, bullJob: BullJob<Payload
     const ai = createAIContentProvider({ userId: project.userId, projectId, jobId });
     const regenerated = await ai.regenerateScene({ plan, characterBible, sceneNumber: scene.sceneNumber, instructions });
 
-    await prisma.scene.update({
-      where: { id: sceneId },
-      data: {
-        title: regenerated.title,
-        narration: regenerated.narration,
-        visualDescription: regenerated.visualDescription,
-        visualPrompt: regenerated.visualPrompt,
-        cameraDirection: regenerated.cameraDirection,
-        durationSeconds: regenerated.durationSeconds,
-        soundEffects: regenerated.soundEffects,
-        transition: regenerated.transition,
-        status: "PENDING",
-      },
-    });
-
     const updatedPlan: ProjectPlan = {
       ...plan,
       scenes: plan.scenes.map((s) => (s.sceneNumber === scene.sceneNumber ? regenerated : s)),
     };
-    await prisma.script.update({ where: { id: script.id }, data: { content: updatedPlan } });
+    // Both writes describe the same regenerated scene -- the Scene row (what
+    // rendering actually reads) and the script's cached ProjectPlan JSON
+    // (what a *later* scene regeneration uses to rebuild AI context). A
+    // crash between them would leave the two out of sync: the scene shows
+    // the new content, but a subsequent regeneration would build its prompt
+    // from the stale plan, silently discarding this regeneration's changes.
+    await prisma.$transaction([
+      prisma.scene.update({
+        where: { id: sceneId },
+        data: {
+          title: regenerated.title,
+          narration: regenerated.narration,
+          visualDescription: regenerated.visualDescription,
+          visualPrompt: regenerated.visualPrompt,
+          cameraDirection: regenerated.cameraDirection,
+          durationSeconds: regenerated.durationSeconds,
+          soundEffects: regenerated.soundEffects,
+          transition: regenerated.transition,
+          status: "PENDING",
+        },
+      }),
+      prisma.script.update({ where: { id: script.id }, data: { content: updatedPlan } }),
+    ]);
 
     await jobService.markCompleted(jobId, { sceneId, sceneNumber: scene.sceneNumber });
   } catch (err) {
