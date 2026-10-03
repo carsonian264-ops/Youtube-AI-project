@@ -24,6 +24,7 @@ The API server and the worker process are **two separate deployable services bui
 
 ## Steps
 
+0. **Honesty check on the Dockerfiles below.** `backend/Dockerfile` and `frontend/Dockerfile` were written to match this repo's actual `package.json` scripts and file layout, but Docker's daemon cannot run in the environment they were written in (container permission limits), so **`docker build` itself has not been executed against either file**. Build and smoke-test both before trusting them for a real deployment.
 1. **Create the database.** Provision managed PostgreSQL (e.g. Render Postgres, Railway Postgres, Supabase, RDS). Note the connection string for `DATABASE_URL`.
 2. **Create Redis.** Provision managed Redis (e.g. Upstash, Render Redis, ElastiCache). Note the connection string for `REDIS_URL`.
 3. **Create the storage bucket.** Create an S3 bucket (or R2/Supabase Storage bucket). Configure CORS on the bucket to allow `GET` from your frontend's origin (required for `<img>`/`<video>`/`<audio>` to load generated media). Note bucket name, region, endpoint (if not AWS), and an access key pair.
@@ -54,12 +55,22 @@ The API server and the worker process are **two separate deployable services bui
    BACKEND_URL=https://your-api-domain
    ```
    Apply migrations before first boot: `npx prisma migrate deploy` (run once, e.g. as a release/predeploy command).
-5. **Deploy the backend API.** Build command: `npm install && npm run build` (from `backend/`). Start command: `npm start` (`node dist/server.js`). Health check path: `/health`.
-6. **Deploy the worker.** Same image/build as the API, different start command: `npm run start:worker` (`node dist/queues/worker.js`). The worker's host must have `ffmpeg`/`ffprobe` installed (set `FFMPEG_PATH`/`FFPROBE_PATH` if not at `/usr/bin/`) — most platforms need a Docker image with FFmpeg baked in (e.g. an `apt-get install ffmpeg` layer) rather than a bare Node buildpack.
-7. **Deploy the frontend.** Build command: `npm install && npm run build` (from `frontend/`). Output directory: `dist/`. Set `VITE_BACKEND_URL` at build time if the API isn't reverse-proxied under the same domain at `/api`.
+5. **Deploy the backend API.** Build command: `npm install && npm run build` (from `backend/`). Start command: `npm start` (`node dist/server.js`). Health check path: **`/health/ready`** (not `/health` — see below).
+6. **Deploy the worker.** Same image/build as the API, different start command: `npm run start:worker` (`node dist/queues/worker.js`). The worker's host must have `ffmpeg`/`ffprobe` installed (set `FFMPEG_PATH`/`FFPROBE_PATH` if not at `/usr/bin/`) — most platforms need a Docker image with FFmpeg baked in (e.g. an `apt-get install ffmpeg` layer) rather than a bare Node buildpack. `backend/Dockerfile` (root of this repo) builds exactly that image and serves both the API and the worker from it (see the comment at the top of that file for the two start commands) — build it from the repo root (`docker build -f backend/Dockerfile .`), since it needs the root `package.json` for the npm-workspaces install.
+7. **Deploy the frontend.** Build command: `npm install && npm run build` (from `frontend/`). Output directory: `dist/`. Set `VITE_BACKEND_URL` at build time if the API isn't reverse-proxied under the same domain at `/api`. For a self-hosted/docker-compose deployment instead of a static host, `frontend/Dockerfile` builds an nginx image that reverse-proxies `/api` to a `BACKEND_URL` set at container start — see the comment at the top of that file.
 8. **Configure your domain(s) and HTTPS.** Point the frontend and API at their respective domains/subdomains; most platforms in step 5–7 provision TLS automatically.
 9. **Configure OAuth.** In Google Cloud Console, create OAuth 2.0 credentials for the YouTube Data API, add `YOUTUBE_REDIRECT_URI` as an authorized redirect URI, and request the `youtube.upload`/`youtube.readonly` scopes (see `youtube.controller.ts`). Google may require app verification before `PUBLIC` visibility publishing works for non-test users.
 10. **Test the production workflow.** Register a real account, create a project, run `/generate` end to end with real providers, confirm a video renders and a thumbnail generates, connect a YouTube channel, and publish one video with `visibility: PRIVATE` first before trusting the pipeline with `PUBLIC`.
+
+## Health and observability endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Pure liveness: the Node process is up. Checks nothing else — a DB/Redis hiccup should not make an orchestrator restart an otherwise-healthy process. |
+| `GET /health/ready` | Readiness: pings Postgres and Redis (3s timeout each) and returns `503` with which one failed if either is down. **This is the path to point your platform's health check at**, not `/health` — only this one actually reflects whether the backend can serve a request. |
+| `GET /health/queues` | Aggregate `waiting`/`active`/`completed`/`failed`/`delayed` counts per BullMQ queue — no job payloads, no user/project data. Useful for spotting a stuck worker or a growing backlog without inspecting Redis directly. Unauthenticated, same as the other two, since it exposes only counts. |
+
+All three were last verified locally (see TESTING.md) by stopping Redis and confirming `/health/ready` correctly reports `503` with `redis: {ok: false}`, then recovers once Redis is back.
 
 ## Suggested platform pairings
 

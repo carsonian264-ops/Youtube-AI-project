@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` at the repo root before running anything locally. 
 | Variable | Required | Notes |
 |---|---|---|
 | `VISUAL_PROVIDER` | no | `mock` (default), `openart` (paid), or `pollinations` (free account) |
-| `OPENART_API_KEY` | only if `VISUAL_PROVIDER=openart` | |
+| `OPENART_API_KEY` | only if `VISUAL_PROVIDER=openart` | From your OpenArt account's API settings (openart.ai). Never sent to the frontend. **Not independently verified against a live OpenArt account in this codebase's development** -- see the doc comment at the top of `backend/src/services/visual/OpenArtProvider.ts` before relying on this in production; confirm the endpoint paths and response shape against a real key first. |
 | `OPENART_BASE_URL` | no | Default `https://api.openart.ai` |
 | `POLLINATIONS_API_KEY` | only if `VISUAL_PROVIDER=pollinations` | The "secret key" from a free pollinations.ai account -- unauthenticated use is rate-limited to ~1 image/hour/IP, too slow for a multi-scene project |
 | `POLLINATIONS_BASE_URL` | no | Default `https://gen.pollinations.ai` |
