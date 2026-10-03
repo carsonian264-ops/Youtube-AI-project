@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { google } from "googleapis";
 import { ProviderError } from "@/utils/errors";
+import { logger } from "@/utils/logger";
 import type {
   GetVideoStatsInput,
   PublishingProvider,
@@ -65,10 +66,24 @@ export class YouTubeProvider implements PublishingProvider {
       }
 
       if (input.thumbnailFilePath) {
-        await youtube.thumbnails.set({
-          videoId,
-          media: { body: createReadStream(input.thumbnailFilePath) },
-        });
+        // The video itself is already live at this point -- a thumbnail
+        // failure (most commonly: the channel isn't phone-verified, which
+        // YouTube requires for the custom-thumbnail endpoint specifically,
+        // separate from the OAuth scope) must not be allowed to sink an
+        // otherwise-successful publish. Previously this threw out of the
+        // whole publish() call, which the worker then recorded as a total
+        // FAILED with no externalVideoId saved -- orphaning the just-
+        // uploaded video on the user's channel with no record of it in the
+        // app, and leaving the publish retryable into a duplicate upload.
+        try {
+          await youtube.thumbnails.set({
+            videoId,
+            media: { body: createReadStream(input.thumbnailFilePath) },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Unknown error setting custom thumbnail";
+          logger.warn({ err, videoId }, `YouTube video uploaded, but setting its custom thumbnail failed: ${message}`);
+        }
       }
 
       return { externalVideoId: videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
