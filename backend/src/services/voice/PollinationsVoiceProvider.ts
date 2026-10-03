@@ -26,17 +26,20 @@ export class PollinationsVoiceProvider implements VoiceGenerationProvider {
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.options.apiKey}` },
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
+      // Raw body goes in `details`, not the message -- see
+      // OpenArtProvider.ts's identical fix for why.
       const body = await res.text().catch(() => "");
-      throw new ProviderError("pollinations-voice", `Failed to generate speech (${res.status}): ${body}`, res.status >= 500);
+      throw new ProviderError("pollinations-voice", `Failed to generate speech (${res.status})`, res.status >= 500, body);
     }
 
     const contentType = res.headers.get("content-type") ?? "audio/mpeg";
     if (!contentType.startsWith("audio/")) {
       const body = await res.text().catch(() => "");
-      throw new ProviderError("pollinations-voice", `Expected audio but got ${contentType}: ${body.slice(0, 500)}`, true);
+      throw new ProviderError("pollinations-voice", `Expected audio but got ${contentType}`, true, body.slice(0, 500));
     }
 
     const data = Buffer.from(await res.arrayBuffer());

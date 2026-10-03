@@ -167,3 +167,19 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
+
+// Not a hard failure (unlike the superRefine checks above): a single,
+// persistent-volume-backed instance could legitimately run this way. But
+// it's a common and easy-to-miss misconfiguration -- STORAGE_PROVIDER
+// defaults to "local", so a production deploy that simply forgot to set
+// STORAGE_PROVIDER=s3 would silently store every generated asset on the
+// container's own ephemeral disk, losing it all on the next restart or
+// redeploy, or serving inconsistent results across multiple instances.
+if (env.NODE_ENV === "production" && env.STORAGE_PROVIDER === "local") {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "WARNING: STORAGE_PROVIDER=local in production. Generated media (images, audio, video, thumbnails) will be " +
+      "stored on this container's local disk, which does not persist across restarts/redeploys and is not shared " +
+      "across multiple instances. Set STORAGE_PROVIDER=s3 (see DEPLOYMENT.md) unless this is intentional.",
+  );
+}

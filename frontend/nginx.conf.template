@@ -1,0 +1,29 @@
+# Templated by nginx's official entrypoint (envsubst on every
+# /etc/nginx/templates/*.template into /etc/nginx/conf.d/) -- ${BACKEND_URL}
+# is substituted from the container's BACKEND_URL env var at startup, not
+# at image build time, so one image works against any backend address.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # The SPA's own routes (React Router) -- always serve index.html for
+    # anything that isn't a real static file or an /api request, so a
+    # hard refresh on e.g. /projects/abc123 doesn't 404.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Mirrors the dev server's Vite proxy (see frontend/vite.config.ts) so
+    # the frontend's hardcoded same-origin `/api` base URL (src/lib/api.ts)
+    # works unchanged in this deployment shape too.
+    location /api/ {
+        proxy_pass ${BACKEND_URL}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

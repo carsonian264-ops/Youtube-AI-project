@@ -32,11 +32,14 @@ export class TTSProvider implements VoiceGenerationProvider {
         model_id: "eleven_multilingual_v2",
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
+      // Raw body goes in `details`, not the message -- see
+      // OpenArtProvider.ts's identical fix for why.
       const body = await res.text().catch(() => "");
-      throw new ProviderError("tts", `Speech generation failed (${res.status}): ${body}`, res.status >= 500);
+      throw new ProviderError("tts", `Speech generation failed (${res.status})`, res.status >= 500, body);
     }
 
     const data = Buffer.from(await res.arrayBuffer());
