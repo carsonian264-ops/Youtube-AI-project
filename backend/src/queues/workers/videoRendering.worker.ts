@@ -74,9 +74,19 @@ export function startVideoRenderingWorker(): Worker {
           );
           const soundEffectPaths: string[] = [];
           for (const name of effectNames) {
-            const sfxPath = await soundEffectProvider.getEffect({ name });
-            sfxTempDirs.push(path.dirname(sfxPath));
-            soundEffectPaths.push(sfxPath);
+            // A sound effect is a cosmetic accent, not something worth
+            // failing an otherwise-successful render over -- same
+            // reasoning as skipping an AI-invented name above. Scenes
+            // already render correctly with zero sound effects (the
+            // per-scene audio mix just has one fewer input), so a
+            // generation failure here is dropped, not fatal.
+            try {
+              const sfxPath = await soundEffectProvider.getEffect({ name });
+              sfxTempDirs.push(path.dirname(sfxPath));
+              soundEffectPaths.push(sfxPath);
+            } catch (err) {
+              logger.warn({ err, projectId, sceneId: scene.id, name }, "Sound effect generation failed; rendering this scene without it");
+            }
           }
 
           sceneInputs.push({
@@ -92,8 +102,19 @@ export function startVideoRenderingWorker(): Worker {
 
         const captionsPath = captionRecord ? await storage.resolveLocalPath(captionRecord.storageKey) : undefined;
 
-        const musicPath =
-          project.musicMood === "NONE" ? undefined : await createMusicProvider().getTrack(project.musicMood);
+        // Background music is optional even when the user picked a mood --
+        // FFmpegRenderer already renders a fully-mastered voice-only mix
+        // when musicPath is undefined (see normalizeAudioOnly), so a music
+        // generation failure degrades the video instead of failing the
+        // whole render.
+        let musicPath: string | undefined;
+        if (project.musicMood !== "NONE") {
+          try {
+            musicPath = await createMusicProvider().getTrack(project.musicMood);
+          } catch (err) {
+            logger.warn({ err, projectId, musicMood: project.musicMood }, "Background music generation failed; rendering without music");
+          }
+        }
 
         try {
           const renderer = createVideoRenderer();

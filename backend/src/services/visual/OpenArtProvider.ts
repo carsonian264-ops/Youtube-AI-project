@@ -10,6 +10,14 @@ const ASPECT_RATIO_SIZE: Record<GenerateImageInput["aspectRatio"], { width: numb
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 120_000;
+// Bounds a single HTTP call, distinct from POLL_TIMEOUT_MS (which bounds
+// the whole poll loop across many calls). Without this, a stalled TCP
+// connection to OpenArt -- not a slow-but-completing response, but a
+// socket that never resolves -- would hang the worker indefinitely, since
+// `fetch` has no timeout of its own and the poll loop never gets to its
+// next deadline check mid-call. See EdgeVoiceProvider.ts for the same
+// class of problem solved via Promise.race for a non-fetch client.
+const REQUEST_TIMEOUT_MS = 30_000;
 
 export interface OpenArtProviderOptions {
   apiKey: string;
@@ -37,22 +45,33 @@ export class OpenArtProvider implements VisualGenerationProvider {
     const { width, height } = ASPECT_RATIO_SIZE[input.aspectRatio];
     const prompt = input.styleReference ? `${input.prompt}, ${input.styleReference}` : input.prompt;
 
-    const jobId = await this.createGenerationJob({
-      prompt,
-      negativePrompt: input.negativePrompt,
-      width,
-      height,
-    });
+    try {
+      const jobId = await this.createGenerationJob({
+        prompt,
+        negativePrompt: input.negativePrompt,
+        width,
+        height,
+      });
 
-    const resultUrl = await this.pollGenerationJob(jobId);
-    const data = await this.downloadImage(resultUrl);
+      const resultUrl = await this.pollGenerationJob(jobId);
+      const data = await this.downloadImage(resultUrl);
 
-    return {
-      data,
-      mimeType: "image/png",
-      provider: "openart",
-      metadata: { jobId, width, height, prompt },
-    };
+      return {
+        data,
+        mimeType: "image/png",
+        provider: "openart",
+        metadata: { jobId, width, height, prompt },
+      };
+    } catch (err) {
+      // A REQUEST_TIMEOUT_MS abort surfaces as a raw DOMException
+      // ("TimeoutError"/"AbortError"), not a ProviderError -- normalize it
+      // here the same way GeminiProvider's outer catch does, so callers
+      // always see a consistent, retryable ProviderError rather than
+      // having to special-case fetch's own abort error shape.
+      if (err instanceof ProviderError) throw err;
+      logger.error({ err }, "OpenArt image generation failed");
+      throw new ProviderError("openart", err instanceof Error ? err.message : "Unknown OpenArt error", true);
+    }
   }
 
   private async createGenerationJob(params: {
@@ -73,14 +92,30 @@ export class OpenArtProvider implements VisualGenerationProvider {
         width: params.width,
         height: params.height,
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     if (!res.ok) {
+      // The raw body goes in `details`, not interpolated into the message:
+      // errorHandler.ts strips `details` from 5xx responses before they
+      // reach the client specifically so an upstream provider's own error
+      // text (which could echo back request content, or just be noisy
+      // HTML) never leaks through our API -- putting it in the message
+      // string instead would silently defeat that protection.
       const body = await res.text().catch(() => "");
-      throw new ProviderError("openart", `Failed to create generation job (${res.status}): ${body}`, res.status >= 500);
+      // 429 (rate limited) deserves the same retry treatment as a 5xx --
+      // the request didn't fail because it was wrong, just because this
+      // attempt was too soon (see GeminiProvider's identical reasoning).
+      const retryable = res.status >= 500 || res.status === 429;
+      throw new ProviderError("openart", `Failed to create generation job (${res.status})`, retryable, body);
     }
 
-    const json = (await res.json()) as { id?: string; job_id?: string };
+    let json: { id?: string; job_id?: string };
+    try {
+      json = (await res.json()) as { id?: string; job_id?: string };
+    } catch {
+      throw new ProviderError("openart", "Generation job response was not valid JSON", true);
+    }
     const jobId = json.id ?? json.job_id;
     if (!jobId) {
       throw new ProviderError("openart", "Generation job response did not include a job id", false, json);
@@ -94,14 +129,21 @@ export class OpenArtProvider implements VisualGenerationProvider {
     while (Date.now() < deadline) {
       const res = await fetch(`${this.options.baseUrl}/v1/generations/${jobId}`, {
         headers: { Authorization: `Bearer ${this.options.apiKey}` },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
 
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new ProviderError("openart", `Failed to poll generation job (${res.status}): ${body}`, res.status >= 500);
+        const retryable = res.status >= 500 || res.status === 429;
+        throw new ProviderError("openart", `Failed to poll generation job (${res.status})`, retryable, body);
       }
 
-      const json = (await res.json()) as { status?: string; output_url?: string; url?: string; error?: string };
+      let json: { status?: string; output_url?: string; url?: string; error?: string };
+      try {
+        json = (await res.json()) as { status?: string; output_url?: string; url?: string; error?: string };
+      } catch {
+        throw new ProviderError("openart", "Generation job poll response was not valid JSON", true);
+      }
 
       if (json.status === "completed" || json.status === "succeeded") {
         const url = json.output_url ?? json.url;
@@ -123,7 +165,7 @@ export class OpenArtProvider implements VisualGenerationProvider {
   }
 
   private async downloadImage(url: string): Promise<Buffer> {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (!res.ok) {
       throw new ProviderError("openart", `Failed to download generated image (${res.status})`, true);
     }

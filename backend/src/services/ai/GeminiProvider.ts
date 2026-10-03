@@ -95,7 +95,10 @@ export class GeminiProvider implements AIContentProvider {
           // will. Only a genuine client error (bad request, bad API key)
           // should be treated as non-retryable.
           const retryable = res.status >= 500 || res.status === 429;
-          throw new ProviderError("gemini", `Gemini API request failed (${res.status}): ${body}`, retryable);
+          // Raw body goes in `details`, not the message -- errorHandler.ts
+          // strips `details` from 5xx client responses specifically so an
+          // upstream provider's own error text never leaks through our API.
+          throw new ProviderError("gemini", `Gemini API request failed (${res.status})`, retryable, body);
         }
 
         const json = (await res.json()) as {

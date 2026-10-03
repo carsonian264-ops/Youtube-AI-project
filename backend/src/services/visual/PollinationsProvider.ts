@@ -47,17 +47,21 @@ export class PollinationsProvider implements VisualGenerationProvider {
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.options.apiKey}` },
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!res.ok) {
+      // Raw body goes in `details`, not the message -- errorHandler.ts
+      // strips `details` from 5xx client responses specifically so an
+      // upstream provider's own error text never leaks through our API.
       const body = await res.text().catch(() => "");
-      throw new ProviderError("pollinations", `Failed to generate image (${res.status}): ${body}`, res.status >= 500);
+      throw new ProviderError("pollinations", `Failed to generate image (${res.status})`, res.status >= 500, body);
     }
 
     const contentType = res.headers.get("content-type") ?? "image/jpeg";
     if (!contentType.startsWith("image/")) {
       const body = await res.text().catch(() => "");
-      throw new ProviderError("pollinations", `Expected an image response but got ${contentType}: ${body.slice(0, 500)}`, true);
+      throw new ProviderError("pollinations", `Expected an image response but got ${contentType}`, true, body.slice(0, 500));
     }
 
     const data = Buffer.from(await res.arrayBuffer());
