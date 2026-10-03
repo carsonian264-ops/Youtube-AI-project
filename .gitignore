@@ -52,3 +52,7 @@ Thumbs.db
 # Misc
 *.tsbuildinfo
 .turbo/
+
+# Redis snapshot (written to the working directory of whatever process
+# starts the local Redis server; not application data)
+dump.rdb
